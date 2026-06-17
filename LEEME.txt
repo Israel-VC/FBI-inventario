@@ -1,0 +1,40 @@
+# FBI Central de Alarmas — Inventario
+
+## Qué es esto
+Sistema de inventario con login, productos, movimientos de stock e instalaciones por cliente.
+Usa Supabase como base de datos (ya configurada) y se despliega en Netlify.
+
+## Paso 1 — Crear las tablas en Supabase (una sola vez)
+1. Entrá a tu proyecto en supabase.com
+2. Menú izquierdo → "SQL Editor" → "New query"
+3. Abrí el archivo `supabase-setup.sql` de esta carpeta, copiá todo su contenido y pegalo ahí
+4. Click en "Run"
+
+Esto crea las tablas (productos, clientes, equipos instalados, movimientos), la seguridad
+(solo usuarios logueados pueden ver y editar), y carga 4 productos de ejemplo.
+
+## Paso 2 — Crear los usuarios de tus empleados
+1. En Supabase, menú izquierdo → "Authentication" → "Users"
+2. Click en "Add user" → "Create new user"
+3. Completá el email y una contraseña para cada persona (por ejemplo: juan@fbialarmas.com)
+4. Importante: tildá "Auto Confirm User" para que no haga falta verificar el email
+5. Repetí para cada empleado
+
+Con eso ya pueden entrar al sistema usando ese email y esa contraseña.
+
+## Paso 3 — Subir el proyecto a Netlify
+La forma más simple sin usar la terminal:
+1. Entrá a app.netlify.com y creá una cuenta (podés usar Google)
+2. Arrastrá esta carpeta completa a la página de Netlify donde dice "Drag and drop your site folder here"
+   — Nota: antes hay que generar la carpeta "dist". Si no sabés cómo, pedíselo a Claude,
+   que te la genera y te la deja lista para arrastrar directamente.
+3. En unos segundos te da un link (ej: fbi-alarmas-inventario.netlify.app) que podés
+   compartir con tus empleados
+
+## Notas
+- Las fotos de productos se guardan como parte del dato del producto (no como archivos
+  separados). Funciona bien para este volumen, pero fotos muy pesadas pueden hacer que
+  cargue más lento. Lo ideal es subir fotos ya redimensionadas (celulares modernos las
+  sacan grandes; no hace falta editar nada manualmente, ya funciona bien así).
+- Si en el futuro querés permisos distintos por persona (por ejemplo, que solo el gerente
+  pueda eliminar productos), se puede agregar después sin rehacer nada.

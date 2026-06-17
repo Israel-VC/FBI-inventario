@@ -1,0 +1,23 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  min-height: 100vh;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: #15171a;
+  color: #edeef0;
+}
+
+input, select, button, textarea {
+  font-family: inherit;
+}
+
+::placeholder {
+  color: #6b7077;
+}

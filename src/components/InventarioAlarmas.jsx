@@ -1,0 +1,901 @@
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { supabase } from "../lib/supabaseClient";
+import {
+  Search,
+  Plus,
+  Package,
+  ArrowUpDown,
+  Home,
+  X,
+  Camera,
+  Trash2,
+  Edit2,
+  AlertTriangle,
+  ChevronRight,
+  ShieldCheck,
+  LogOut,
+} from "lucide-react";
+
+const CATEGORIAS = ["Paneles", "Sensores", "Sirenas", "Cámaras", "Teclados", "Baterías", "Cableado", "Accesorios"];
+
+function formatoMoneda(n) {
+  return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n || 0);
+}
+
+function formatoFecha(f) {
+  const d = new Date(f);
+  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+export default function InventarioAlarmas({ sesion }) {
+  const [vista, setVista] = useState("inventario");
+  const [productos, setProductos] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [movimientos, setMovimientos] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
+
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("Todas");
+
+  const [modalProducto, setModalProducto] = useState(null);
+  const [modalMovimiento, setModalMovimiento] = useState(null);
+  const [modalCliente, setModalCliente] = useState(null);
+  const [modalAsignar, setModalAsignar] = useState(null);
+  const [confirmarBorrado, setConfirmarBorrado] = useState(null);
+
+  const cargarTodo = useCallback(async () => {
+    setCargando(true);
+    setError("");
+    try {
+      const [{ data: prod, error: e1 }, { data: cli, error: e2 }, { data: eq, error: e3 }, { data: mov, error: e4 }] = await Promise.all([
+        supabase.from("productos").select("*").order("creado_en", { ascending: false }),
+        supabase.from("clientes").select("*").order("creado_en", { ascending: false }),
+        supabase.from("equipos_instalados").select("*"),
+        supabase.from("movimientos").select("*").order("creado_en", { ascending: false }).limit(100),
+      ]);
+      if (e1 || e2 || e3 || e4) throw e1 || e2 || e3 || e4;
+
+      const clientesConEquipos = (cli || []).map((c) => ({
+        ...c,
+        equipos: (eq || []).filter((e) => e.cliente_id === c.id).map((e) => ({ productoId: e.producto_id, cantidad: e.cantidad })),
+      }));
+
+      setProductos(prod || []);
+      setClientes(clientesConEquipos);
+      setMovimientos(mov || []);
+    } catch (err) {
+      setError("No se pudo cargar la información. Revisá tu conexión e intentá de nuevo.");
+    } finally {
+      setCargando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarTodo();
+  }, [cargarTodo]);
+
+  const productosFiltrados = useMemo(() => {
+    return productos.filter((p) => {
+      const coincideBusqueda =
+        p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+        (p.marca || "").toLowerCase().includes(busqueda.toLowerCase()) ||
+        (p.modelo || "").toLowerCase().includes(busqueda.toLowerCase());
+      const coincideCategoria = filtroCategoria === "Todas" || p.categoria === filtroCategoria;
+      return coincideBusqueda && coincideCategoria;
+    });
+  }, [productos, busqueda, filtroCategoria]);
+
+  const productosStockBajo = useMemo(() => productos.filter((p) => p.stock <= p.minimo), [productos]);
+
+  async function guardarProducto(producto) {
+    const payload = {
+      nombre: producto.nombre,
+      categoria: producto.categoria,
+      marca: producto.marca,
+      modelo: producto.modelo,
+      precio: Number(producto.precio) || 0,
+      stock: Number(producto.stock) || 0,
+      minimo: Number(producto.minimo) || 0,
+      foto: producto.foto,
+    };
+    if (producto.id) {
+      const { error } = await supabase.from("productos").update(payload).eq("id", producto.id);
+      if (error) return setError("No se pudo actualizar el producto.");
+    } else {
+      const { error } = await supabase.from("productos").insert(payload);
+      if (error) return setError("No se pudo crear el producto.");
+    }
+    setModalProducto(null);
+    cargarTodo();
+  }
+
+  async function eliminarProducto(id) {
+    const { error } = await supabase.from("productos").delete().eq("id", id);
+    if (error) setError("No se pudo eliminar el producto.");
+    setConfirmarBorrado(null);
+    cargarTodo();
+  }
+
+  async function registrarMovimiento(mov) {
+    const producto = productos.find((p) => p.id === mov.productoId);
+    if (!producto) return;
+    const delta = mov.tipo === "entrada" ? mov.cantidad : -mov.cantidad;
+    const nuevoStock = Math.max(0, producto.stock + delta);
+
+    const { error: e1 } = await supabase.from("productos").update({ stock: nuevoStock }).eq("id", producto.id);
+    const { error: e2 } = await supabase.from("movimientos").insert({
+      producto_id: mov.productoId,
+      tipo: mov.tipo,
+      cantidad: mov.cantidad,
+      motivo: mov.motivo,
+      usuario_email: sesion.user.email,
+    });
+    if (e1 || e2) setError("No se pudo registrar el movimiento.");
+    setModalMovimiento(null);
+    cargarTodo();
+  }
+
+  async function guardarCliente(cliente) {
+    const payload = { nombre: cliente.nombre, domicilio: cliente.domicilio, telefono: cliente.telefono };
+    if (cliente.id) {
+      const { error } = await supabase.from("clientes").update(payload).eq("id", cliente.id);
+      if (error) return setError("No se pudo actualizar el cliente.");
+    } else {
+      const { error } = await supabase.from("clientes").insert(payload);
+      if (error) return setError("No se pudo crear el cliente.");
+    }
+    setModalCliente(null);
+    cargarTodo();
+  }
+
+  async function asignarEquipo(clienteId, productoId, cantidad) {
+    const producto = productos.find((p) => p.id === productoId);
+    if (!producto || cantidad > producto.stock) {
+      setError("No hay stock suficiente para asignar esa cantidad.");
+      return;
+    }
+    const cliente = clientes.find((c) => c.id === clienteId);
+
+    const { error: e1 } = await supabase.from("equipos_instalados").insert({ cliente_id: clienteId, producto_id: productoId, cantidad });
+    const { error: e2 } = await supabase.from("productos").update({ stock: producto.stock - cantidad }).eq("id", productoId);
+    const { error: e3 } = await supabase.from("movimientos").insert({
+      producto_id: productoId,
+      tipo: "salida",
+      cantidad,
+      motivo: `Instalación: ${cliente?.nombre || ""}`,
+      usuario_email: sesion.user.email,
+    });
+    if (e1 || e2 || e3) setError("No se pudo asignar el equipo.");
+    setModalAsignar(null);
+    cargarTodo();
+  }
+
+  async function cerrarSesion() {
+    await supabase.auth.signOut();
+  }
+
+  if (cargando && productos.length === 0) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--texto-sec)" }}>
+        Cargando inventario...
+      </div>
+    );
+  }
+
+  return (
+    <div style={estilos.app}>
+      <Encabezado vista={vista} setVista={setVista} alertas={productosStockBajo.length} sesion={sesion} onCerrarSesion={cerrarSesion} />
+
+      {error && (
+        <div style={estilos.bannerError}>
+          {error}
+          <button onClick={() => setError("")} style={estilos.iconBtn} aria-label="Cerrar aviso">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      <div style={estilos.contenido}>
+        {vista === "inventario" && (
+          <VistaInventario
+            productos={productosFiltrados}
+            todos={productos}
+            busqueda={busqueda}
+            setBusqueda={setBusqueda}
+            filtroCategoria={filtroCategoria}
+            setFiltroCategoria={setFiltroCategoria}
+            onNuevo={() => setModalProducto("nuevo")}
+            onEditar={(p) => setModalProducto(p)}
+            onEliminar={(p) => setConfirmarBorrado(p)}
+            onMovimiento={() => setModalMovimiento(true)}
+          />
+        )}
+
+        {vista === "movimientos" && <VistaMovimientos movimientos={movimientos} productos={productos} onNuevo={() => setModalMovimiento(true)} />}
+
+        {vista === "instalaciones" && (
+          <VistaInstalaciones
+            clientes={clientes}
+            productos={productos}
+            onNuevoCliente={() => setModalCliente("nuevo")}
+            onEditarCliente={(c) => setModalCliente(c)}
+            onAsignar={(c) => setModalAsignar(c)}
+          />
+        )}
+      </div>
+
+      {productosStockBajo.length > 0 && vista === "inventario" && <BarraAlertas productos={productosStockBajo} />}
+
+      {modalProducto && (
+        <ModalProducto producto={modalProducto === "nuevo" ? null : modalProducto} onGuardar={guardarProducto} onCerrar={() => setModalProducto(null)} />
+      )}
+
+      {modalMovimiento && <ModalMovimiento productos={productos} onGuardar={registrarMovimiento} onCerrar={() => setModalMovimiento(null)} />}
+
+      {modalCliente && (
+        <ModalCliente cliente={modalCliente === "nuevo" ? null : modalCliente} onGuardar={guardarCliente} onCerrar={() => setModalCliente(null)} />
+      )}
+
+      {modalAsignar && (
+        <ModalAsignarEquipo cliente={modalAsignar} productos={productos} onAsignar={asignarEquipo} onCerrar={() => setModalAsignar(null)} />
+      )}
+
+      {confirmarBorrado && (
+        <ModalConfirmar
+          titulo="Eliminar producto"
+          mensaje={`¿Seguro que querés eliminar "${confirmarBorrado.nombre}" del inventario? Esta acción no se puede deshacer.`}
+          onConfirmar={() => eliminarProducto(confirmarBorrado.id)}
+          onCancelar={() => setConfirmarBorrado(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function Encabezado({ vista, setVista, alertas, sesion, onCerrarSesion }) {
+  const tabs = [
+    { id: "inventario", label: "Inventario", icon: Package },
+    { id: "movimientos", label: "Movimientos", icon: ArrowUpDown },
+    { id: "instalaciones", label: "Instalaciones", icon: Home },
+  ];
+  return (
+    <div style={estilos.encabezado}>
+      <div style={estilos.marca}>
+        <div style={estilos.iconoMarca}>
+          <ShieldCheck size={18} color="var(--ambar)" strokeWidth={2} />
+        </div>
+        <div>
+          <div style={estilos.marcaTitulo}>FBI Central de Alarmas</div>
+          <div style={estilos.marcaSub}>Inventario · {sesion.user.email}</div>
+        </div>
+      </div>
+      <div style={estilos.tabs}>
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          const activo = vista === t.id;
+          return (
+            <button key={t.id} onClick={() => setVista(t.id)} style={{ ...estilos.tabBtn, ...(activo ? estilos.tabBtnActivo : {}) }}>
+              <Icon size={15} strokeWidth={2} />
+              {t.label}
+              {t.id === "inventario" && alertas > 0 && <span style={estilos.badgeAlerta}>{alertas}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <button onClick={onCerrarSesion} style={estilos.btnSalir} aria-label="Cerrar sesión">
+        <LogOut size={15} />
+      </button>
+    </div>
+  );
+}
+
+function VistaInventario({ productos, todos, busqueda, setBusqueda, filtroCategoria, setFiltroCategoria, onNuevo, onEditar, onEliminar, onMovimiento }) {
+  const valorTotal = todos.reduce((acc, p) => acc + p.precio * p.stock, 0);
+
+  return (
+    <div>
+      <div style={estilos.statsRow}>
+        <div style={estilos.statCard}>
+          <div style={estilos.statLabel}>Productos distintos</div>
+          <div style={estilos.statValor}>{todos.length}</div>
+        </div>
+        <div style={estilos.statCard}>
+          <div style={estilos.statLabel}>Unidades totales</div>
+          <div style={estilos.statValor}>{todos.reduce((a, p) => a + p.stock, 0)}</div>
+        </div>
+        <div style={estilos.statCard}>
+          <div style={estilos.statLabel}>Valor de stock</div>
+          <div style={estilos.statValor}>{formatoMoneda(valorTotal)}</div>
+        </div>
+      </div>
+
+      <div style={estilos.toolbar}>
+        <div style={estilos.buscador}>
+          <Search size={16} color="var(--muted)" />
+          <input placeholder="Buscar por nombre, marca o modelo..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={estilos.inputBuscador} />
+        </div>
+        <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={estilos.select}>
+          <option>Todas</option>
+          {CATEGORIAS.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+        <button onClick={onMovimiento} style={estilos.btnSecundario}>
+          <ArrowUpDown size={15} /> Movimiento
+        </button>
+        <button onClick={onNuevo} style={estilos.btnPrimario}>
+          <Plus size={15} /> Nuevo producto
+        </button>
+      </div>
+
+      {productos.length === 0 ? (
+        <EstadoVacio mensaje="No se encontró ningún producto con esos filtros." />
+      ) : (
+        <div style={estilos.grilla}>
+          {productos.map((p) => (
+            <TarjetaProducto key={p.id} producto={p} onEditar={() => onEditar(p)} onEliminar={() => onEliminar(p)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TarjetaProducto({ producto, onEditar, onEliminar }) {
+  const bajo = producto.stock <= producto.minimo;
+  const critico = producto.stock === 0;
+  return (
+    <div style={estilos.tarjeta}>
+      <div style={estilos.tarjetaFoto}>
+        {producto.foto ? <img src={producto.foto} alt={producto.nombre} style={estilos.imgProducto} /> : <Package size={28} color="var(--muted)" strokeWidth={1.5} />}
+        <div
+          style={{ ...estilos.puntoEstado, background: critico ? "var(--rojo)" : bajo ? "var(--ambar)" : "var(--verde)" }}
+          title={critico ? "Sin stock" : bajo ? "Stock bajo" : "Stock ok"}
+        />
+      </div>
+      <div style={estilos.tarjetaCuerpo}>
+        <div style={estilos.tarjetaCategoria}>{producto.categoria}</div>
+        <div style={estilos.tarjetaNombre}>{producto.nombre}</div>
+        <div style={estilos.tarjetaMarca}>
+          {producto.marca} · {producto.modelo}
+        </div>
+        <div style={estilos.tarjetaFooter}>
+          <span style={estilos.tarjetaPrecio}>{formatoMoneda(producto.precio)}</span>
+          <span style={{ ...estilos.tarjetaStock, color: critico ? "var(--rojo)" : bajo ? "var(--ambar)" : "var(--texto-sec)" }}>{producto.stock} en stock</span>
+        </div>
+      </div>
+      <div style={estilos.tarjetaAcciones}>
+        <button onClick={onEditar} style={estilos.iconBtn} aria-label="Editar">
+          <Edit2 size={14} />
+        </button>
+        <button onClick={onEliminar} style={estilos.iconBtn} aria-label="Eliminar">
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function VistaMovimientos({ movimientos, productos, onNuevo }) {
+  function nombreProducto(id) {
+    return productos.find((p) => p.id === id)?.nombre || "Producto eliminado";
+  }
+  return (
+    <div>
+      <div style={estilos.toolbar}>
+        <div style={{ flex: 1 }}>
+          <div style={estilos.tituloSeccion}>Historial de movimientos</div>
+          <div style={estilos.subtituloSeccion}>Entradas y salidas de stock</div>
+        </div>
+        <button onClick={onNuevo} style={estilos.btnPrimario}>
+          <Plus size={15} /> Registrar movimiento
+        </button>
+      </div>
+
+      {movimientos.length === 0 ? (
+        <EstadoVacio mensaje="Todavía no se registró ningún movimiento." />
+      ) : (
+        <div style={estilos.listaMovimientos}>
+          {movimientos.map((m) => (
+            <div key={m.id} style={estilos.filaMovimiento}>
+              <div
+                style={{
+                  ...estilos.iconoMovimiento,
+                  background: m.tipo === "entrada" ? "rgba(99,153,34,0.15)" : "rgba(226,75,74,0.15)",
+                  color: m.tipo === "entrada" ? "var(--verde)" : "var(--rojo)",
+                }}
+              >
+                {m.tipo === "entrada" ? "+" : "−"}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={estilos.movProducto}>{nombreProducto(m.producto_id)}</div>
+                <div style={estilos.movMotivo}>
+                  {m.motivo} {m.usuario_email ? `· ${m.usuario_email}` : ""}
+                </div>
+              </div>
+              <div style={estilos.movCantidad}>
+                {m.tipo === "entrada" ? "+" : "−"}
+                {m.cantidad}
+              </div>
+              <div style={estilos.movFecha}>{formatoFecha(m.creado_en)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VistaInstalaciones({ clientes, productos, onNuevoCliente, onEditarCliente, onAsignar }) {
+  function nombreProducto(id) {
+    return productos.find((p) => p.id === id)?.nombre || "Producto eliminado";
+  }
+  return (
+    <div>
+      <div style={estilos.toolbar}>
+        <div style={{ flex: 1 }}>
+          <div style={estilos.tituloSeccion}>Instalaciones por cliente</div>
+          <div style={estilos.subtituloSeccion}>Qué equipo quedó instalado en cada domicilio</div>
+        </div>
+        <button onClick={onNuevoCliente} style={estilos.btnPrimario}>
+          <Plus size={15} /> Nuevo cliente
+        </button>
+      </div>
+
+      {clientes.length === 0 ? (
+        <EstadoVacio mensaje="Todavía no agregaste ningún cliente." />
+      ) : (
+        <div style={estilos.listaClientes}>
+          {clientes.map((c) => (
+            <div key={c.id} style={estilos.tarjetaCliente}>
+              <div style={estilos.clienteHeader}>
+                <div>
+                  <div style={estilos.clienteNombre}>{c.nombre}</div>
+                  <div style={estilos.clienteDomicilio}>{c.domicilio}</div>
+                  {c.telefono && <div style={estilos.clienteTelefono}>{c.telefono}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => onEditarCliente(c)} style={estilos.iconBtn} aria-label="Editar cliente">
+                    <Edit2 size={14} />
+                  </button>
+                  <button onClick={() => onAsignar(c)} style={estilos.btnSecundarioChico}>
+                    <Plus size={13} /> Asignar equipo
+                  </button>
+                </div>
+              </div>
+              {c.equipos.length > 0 && (
+                <div style={estilos.equiposLista}>
+                  {c.equipos.map((eq, i) => (
+                    <div key={i} style={estilos.equipoItem}>
+                      <ChevronRight size={13} color="var(--muted)" />
+                      <span>{nombreProducto(eq.productoId)}</span>
+                      <span style={estilos.equipoCantidad}>x{eq.cantidad}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BarraAlertas({ productos }) {
+  return (
+    <div style={estilos.barraAlertas}>
+      <AlertTriangle size={16} color="var(--ambar)" strokeWidth={2} />
+      <span style={estilos.alertaTexto}>
+        Stock bajo en {productos.length} producto{productos.length > 1 ? "s" : ""}: {productos.slice(0, 3).map((p) => p.nombre).join(", ")}
+        {productos.length > 3 ? "…" : ""}
+      </span>
+    </div>
+  );
+}
+
+function EstadoVacio({ mensaje }) {
+  return (
+    <div style={estilos.estadoVacio}>
+      <Package size={32} color="var(--muted)" strokeWidth={1.5} />
+      <div style={estilos.estadoVacioTexto}>{mensaje}</div>
+    </div>
+  );
+}
+
+function ModalBase({ titulo, onCerrar, children, ancho }) {
+  return (
+    <div style={estilos.overlay} onClick={onCerrar}>
+      <div style={{ ...estilos.modal, maxWidth: ancho || 480 }} onClick={(e) => e.stopPropagation()}>
+        <div style={estilos.modalHeader}>
+          <div style={estilos.modalTitulo}>{titulo}</div>
+          <button onClick={onCerrar} style={estilos.iconBtn} aria-label="Cerrar">
+            <X size={16} />
+          </button>
+        </div>
+        <div style={estilos.modalCuerpo}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ModalProducto({ producto, onGuardar, onCerrar }) {
+  const [form, setForm] = useState(
+    producto || { nombre: "", categoria: CATEGORIAS[0], marca: "", modelo: "", precio: "", stock: "", minimo: "", foto: null }
+  );
+  const fileRef = useRef(null);
+
+  function actualizar(campo, valor) {
+    setForm((f) => ({ ...f, [campo]: valor }));
+  }
+
+  function manejarFoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => actualizar("foto", reader.result);
+    reader.readAsDataURL(file);
+  }
+
+  function enviar() {
+    if (!form.nombre.trim()) return;
+    onGuardar(form);
+  }
+
+  return (
+    <ModalBase titulo={producto ? "Editar producto" : "Nuevo producto"} onCerrar={onCerrar}>
+      <div style={estilos.formGrid}>
+        <div style={{ ...estilos.campoFull, display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={estilos.fotoPreview} onClick={() => fileRef.current?.click()}>
+            {form.foto ? <img src={form.foto} alt="" style={estilos.imgProducto} /> : <Camera size={20} color="var(--muted)" />}
+          </div>
+          <div>
+            <button type="button" onClick={() => fileRef.current?.click()} style={estilos.btnSecundarioChico}>
+              {form.foto ? "Cambiar foto" : "Subir foto"}
+            </button>
+            <input ref={fileRef} type="file" accept="image/*" onChange={manejarFoto} style={{ display: "none" }} />
+          </div>
+        </div>
+
+        <Campo label="Nombre del producto" full>
+          <input value={form.nombre} onChange={(e) => actualizar("nombre", e.target.value)} style={estilos.input} placeholder="Ej: Sensor de movimiento PIR" />
+        </Campo>
+
+        <Campo label="Categoría">
+          <select value={form.categoria} onChange={(e) => actualizar("categoria", e.target.value)} style={estilos.select}>
+            {CATEGORIAS.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </Campo>
+
+        <Campo label="Marca">
+          <input value={form.marca} onChange={(e) => actualizar("marca", e.target.value)} style={estilos.input} placeholder="Ej: DSC" />
+        </Campo>
+
+        <Campo label="Modelo">
+          <input value={form.modelo} onChange={(e) => actualizar("modelo", e.target.value)} style={estilos.input} placeholder="Ej: PC1864" />
+        </Campo>
+
+        <Campo label="Precio (ARS)">
+          <input type="number" value={form.precio} onChange={(e) => actualizar("precio", e.target.value)} style={estilos.input} placeholder="0" />
+        </Campo>
+
+        <Campo label="Stock actual">
+          <input type="number" value={form.stock} onChange={(e) => actualizar("stock", e.target.value)} style={estilos.input} placeholder="0" />
+        </Campo>
+
+        <Campo label="Stock mínimo (alerta)">
+          <input type="number" value={form.minimo} onChange={(e) => actualizar("minimo", e.target.value)} style={estilos.input} placeholder="0" />
+        </Campo>
+      </div>
+
+      <div style={estilos.modalFooter}>
+        <button onClick={onCerrar} style={estilos.btnSecundario}>
+          Cancelar
+        </button>
+        <button onClick={enviar} style={estilos.btnPrimario}>
+          Guardar producto
+        </button>
+      </div>
+    </ModalBase>
+  );
+}
+
+function ModalMovimiento({ productos, onGuardar, onCerrar }) {
+  const [form, setForm] = useState({ productoId: productos[0]?.id || "", tipo: "entrada", cantidad: "", motivo: "" });
+
+  function enviar() {
+    if (!form.productoId || !form.cantidad) return;
+    onGuardar({ ...form, cantidad: Number(form.cantidad) });
+  }
+
+  return (
+    <ModalBase titulo="Registrar movimiento" onCerrar={onCerrar}>
+      <div style={estilos.formGrid}>
+        <Campo label="Producto" full>
+          <select value={form.productoId} onChange={(e) => setForm((f) => ({ ...f, productoId: e.target.value }))} style={estilos.select}>
+            {productos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nombre} (stock: {p.stock})
+              </option>
+            ))}
+          </select>
+        </Campo>
+
+        <Campo label="Tipo de movimiento">
+          <div style={estilos.segmentado}>
+            <button type="button" onClick={() => setForm((f) => ({ ...f, tipo: "entrada" }))} style={{ ...estilos.segmentoBtn, ...(form.tipo === "entrada" ? estilos.segmentoBtnActivo : {}) }}>
+              Entrada
+            </button>
+            <button type="button" onClick={() => setForm((f) => ({ ...f, tipo: "salida" }))} style={{ ...estilos.segmentoBtn, ...(form.tipo === "salida" ? estilos.segmentoBtnActivoSalida : {}) }}>
+              Salida
+            </button>
+          </div>
+        </Campo>
+
+        <Campo label="Cantidad">
+          <input type="number" value={form.cantidad} onChange={(e) => setForm((f) => ({ ...f, cantidad: e.target.value }))} style={estilos.input} placeholder="0" />
+        </Campo>
+
+        <Campo label="Motivo" full>
+          <input value={form.motivo} onChange={(e) => setForm((f) => ({ ...f, motivo: e.target.value }))} style={estilos.input} placeholder="Ej: Compra a proveedor, instalación cliente X" />
+        </Campo>
+      </div>
+
+      <div style={estilos.modalFooter}>
+        <button onClick={onCerrar} style={estilos.btnSecundario}>
+          Cancelar
+        </button>
+        <button onClick={enviar} style={estilos.btnPrimario}>
+          Registrar
+        </button>
+      </div>
+    </ModalBase>
+  );
+}
+
+function ModalCliente({ cliente, onGuardar, onCerrar }) {
+  const [form, setForm] = useState(cliente || { nombre: "", domicilio: "", telefono: "" });
+
+  function enviar() {
+    if (!form.nombre.trim() || !form.domicilio.trim()) return;
+    onGuardar(form);
+  }
+
+  return (
+    <ModalBase titulo={cliente ? "Editar cliente" : "Nuevo cliente"} onCerrar={onCerrar}>
+      <div style={estilos.formGrid}>
+        <Campo label="Nombre / razón social" full>
+          <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} style={estilos.input} placeholder="Ej: Farmacia Don Bosco" />
+        </Campo>
+        <Campo label="Domicilio" full>
+          <input value={form.domicilio} onChange={(e) => setForm((f) => ({ ...f, domicilio: e.target.value }))} style={estilos.input} placeholder="Ej: Av. San Martín 452" />
+        </Campo>
+        <Campo label="Teléfono" full>
+          <input value={form.telefono} onChange={(e) => setForm((f) => ({ ...f, telefono: e.target.value }))} style={estilos.input} placeholder="Ej: 266-4123456" />
+        </Campo>
+      </div>
+      <div style={estilos.modalFooter}>
+        <button onClick={onCerrar} style={estilos.btnSecundario}>
+          Cancelar
+        </button>
+        <button onClick={enviar} style={estilos.btnPrimario}>
+          Guardar cliente
+        </button>
+      </div>
+    </ModalBase>
+  );
+}
+
+function ModalAsignarEquipo({ cliente, productos, onAsignar, onCerrar }) {
+  const [productoId, setProductoId] = useState(productos[0]?.id || "");
+  const [cantidad, setCantidad] = useState(1);
+  const productoSeleccionado = productos.find((p) => p.id === productoId);
+
+  function enviar() {
+    if (!productoId || cantidad <= 0) return;
+    onAsignar(cliente.id, productoId, Number(cantidad));
+  }
+
+  return (
+    <ModalBase titulo={`Asignar equipo a ${cliente.nombre}`} onCerrar={onCerrar}>
+      <div style={estilos.formGrid}>
+        <Campo label="Producto" full>
+          <select value={productoId} onChange={(e) => setProductoId(e.target.value)} style={estilos.select}>
+            {productos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nombre} (stock: {p.stock})
+              </option>
+            ))}
+          </select>
+        </Campo>
+        <Campo label="Cantidad a instalar">
+          <input type="number" min="1" max={productoSeleccionado?.stock || 1} value={cantidad} onChange={(e) => setCantidad(e.target.value)} style={estilos.input} />
+        </Campo>
+      </div>
+      {productoSeleccionado && Number(cantidad) > productoSeleccionado.stock && (
+        <div style={estilos.avisoError}>No hay stock suficiente. Disponible: {productoSeleccionado.stock}</div>
+      )}
+      <div style={estilos.modalFooter}>
+        <button onClick={onCerrar} style={estilos.btnSecundario}>
+          Cancelar
+        </button>
+        <button onClick={enviar} style={estilos.btnPrimario} disabled={productoSeleccionado && Number(cantidad) > productoSeleccionado.stock}>
+          Asignar e instalar
+        </button>
+      </div>
+    </ModalBase>
+  );
+}
+
+function ModalConfirmar({ titulo, mensaje, onConfirmar, onCancelar }) {
+  return (
+    <ModalBase titulo={titulo} onCerrar={onCancelar} ancho={400}>
+      <p style={estilos.mensajeConfirmar}>{mensaje}</p>
+      <div style={estilos.modalFooter}>
+        <button onClick={onCancelar} style={estilos.btnSecundario}>
+          Cancelar
+        </button>
+        <button onClick={onConfirmar} style={estilos.btnPeligro}>
+          Eliminar
+        </button>
+      </div>
+    </ModalBase>
+  );
+}
+
+function Campo({ label, children, full }) {
+  return (
+    <div style={full ? estilos.campoFull : estilos.campo}>
+      <label style={estilos.label}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const estilos = {
+  app: {
+    fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+    background: "var(--bg)",
+    color: "var(--texto)",
+    minHeight: "100vh",
+    "--bg": "#15171A",
+    "--superficie": "#1C1F23",
+    "--superficie-alta": "#23262B",
+    "--borde": "#2D3036",
+    "--texto": "#EDEEF0",
+    "--texto-sec": "#9BA0A8",
+    "--muted": "#6B7077",
+    "--ambar": "#D97706",
+    "--verde": "#639922",
+    "--rojo": "#E24B4A",
+    paddingBottom: 40,
+  },
+  encabezado: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "20px 32px",
+    borderBottom: "1px solid var(--borde)",
+    flexWrap: "wrap",
+    gap: 16,
+  },
+  marca: { display: "flex", alignItems: "center", gap: 12 },
+  iconoMarca: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    background: "rgba(217,119,6,0.12)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  marcaTitulo: { fontSize: 15, fontWeight: 600, letterSpacing: 0.2 },
+  marcaSub: { fontSize: 12, color: "var(--texto-sec)", marginTop: 2 },
+  tabs: { display: "flex", gap: 4, background: "var(--superficie)", padding: 4, borderRadius: 10 },
+  tabBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 14px",
+    borderRadius: 8,
+    border: "none",
+    background: "transparent",
+    color: "var(--texto-sec)",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: "pointer",
+  },
+  tabBtnActivo: { background: "var(--superficie-alta)", color: "var(--texto)" },
+  badgeAlerta: { background: "var(--ambar)", color: "#1A1300", fontSize: 11, fontWeight: 700, borderRadius: 10, padding: "1px 6px", marginLeft: 2 },
+  btnSalir: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    border: "1px solid var(--borde)",
+    background: "var(--superficie)",
+    color: "var(--texto-sec)",
+    cursor: "pointer",
+  },
+  bannerError: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    background: "rgba(226,75,74,0.1)",
+    color: "var(--rojo)",
+    padding: "10px 32px",
+    fontSize: 13,
+  },
+  contenido: { padding: "28px 32px", maxWidth: 1200, margin: "0 auto" },
+  statsRow: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 },
+  statCard: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 12, padding: "16px 18px" },
+  statLabel: { fontSize: 12, color: "var(--texto-sec)", marginBottom: 6 },
+  statValor: { fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
+  toolbar: { display: "flex", gap: 10, alignItems: "center", marginBottom: 20, flexWrap: "wrap" },
+  buscador: { display: "flex", alignItems: "center", gap: 8, background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 9, padding: "9px 12px", flex: 1, minWidth: 220 },
+  inputBuscador: { background: "transparent", border: "none", outline: "none", color: "var(--texto)", fontSize: 13.5, width: "100%" },
+  select: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 9, padding: "9px 12px", color: "var(--texto)", fontSize: 13.5, outline: "none" },
+  btnPrimario: { display: "flex", alignItems: "center", gap: 6, background: "var(--ambar)", color: "#1A1300", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
+  btnSecundario: { display: "flex", alignItems: "center", gap: 6, background: "var(--superficie)", color: "var(--texto)", border: "1px solid var(--borde)", borderRadius: 9, padding: "9px 16px", fontSize: 13.5, fontWeight: 500, cursor: "pointer" },
+  btnSecundarioChico: { display: "flex", alignItems: "center", gap: 5, background: "var(--superficie-alta)", color: "var(--texto)", border: "1px solid var(--borde)", borderRadius: 7, padding: "6px 11px", fontSize: 12.5, fontWeight: 500, cursor: "pointer" },
+  btnPeligro: { background: "var(--rojo)", color: "#fff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
+  grilla: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14 },
+  tarjeta: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 12, padding: 14, position: "relative" },
+  tarjetaFoto: { width: "100%", height: 110, background: "var(--superficie-alta)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, position: "relative", overflow: "hidden" },
+  imgProducto: { width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 },
+  puntoEstado: { position: "absolute", top: 8, right: 8, width: 10, height: 10, borderRadius: "50%", border: "2px solid var(--superficie)" },
+  tarjetaCuerpo: { marginBottom: 10 },
+  tarjetaCategoria: { fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 },
+  tarjetaNombre: { fontSize: 14, fontWeight: 600, lineHeight: 1.3, marginBottom: 4 },
+  tarjetaMarca: { fontSize: 12.5, color: "var(--texto-sec)", marginBottom: 10 },
+  tarjetaFooter: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
+  tarjetaPrecio: { fontSize: 13.5, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
+  tarjetaStock: { fontSize: 12, fontFamily: "'JetBrains Mono', monospace" },
+  tarjetaAcciones: { display: "flex", gap: 6, justifyContent: "flex-end", borderTop: "1px solid var(--borde)", paddingTop: 10 },
+  iconBtn: { display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 7, border: "1px solid var(--borde)", background: "var(--superficie-alta)", color: "var(--texto-sec)", cursor: "pointer" },
+  estadoVacio: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "60px 0", color: "var(--texto-sec)" },
+  estadoVacioTexto: { fontSize: 13.5 },
+  tituloSeccion: { fontSize: 16, fontWeight: 600 },
+  subtituloSeccion: { fontSize: 13, color: "var(--texto-sec)", marginTop: 3 },
+  listaMovimientos: { display: "flex", flexDirection: "column", gap: 8 },
+  filaMovimiento: { display: "flex", alignItems: "center", gap: 14, background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 10, padding: "12px 16px" },
+  iconoMovimiento: { width: 30, height: 30, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16 },
+  movProducto: { fontSize: 13.5, fontWeight: 500 },
+  movMotivo: { fontSize: 12, color: "var(--texto-sec)", marginTop: 2 },
+  movCantidad: { fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600, minWidth: 40, textAlign: "right" },
+  movFecha: { fontSize: 12, color: "var(--muted)", minWidth: 80, textAlign: "right" },
+  listaClientes: { display: "flex", flexDirection: "column", gap: 12 },
+  tarjetaCliente: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 12, padding: 16 },
+  clienteHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" },
+  clienteNombre: { fontSize: 14.5, fontWeight: 600 },
+  clienteDomicilio: { fontSize: 12.5, color: "var(--texto-sec)", marginTop: 3 },
+  clienteTelefono: { fontSize: 12.5, color: "var(--muted)", marginTop: 2 },
+  equiposLista: { display: "flex", flexDirection: "column", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--borde)" },
+  equipoItem: { display: "flex", alignItems: "center", gap: 6, fontSize: 13 },
+  equipoCantidad: { fontFamily: "'JetBrains Mono', monospace", color: "var(--texto-sec)", marginLeft: "auto" },
+  barraAlertas: { position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "var(--superficie-alta)", border: "1px solid var(--ambar)", borderRadius: 10, padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, maxWidth: 600, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" },
+  alertaTexto: { fontSize: 12.5, color: "var(--texto)" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 },
+  modal: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 14, width: "100%", maxHeight: "85vh", overflow: "auto" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--borde)" },
+  modalTitulo: { fontSize: 15, fontWeight: 600 },
+  modalCuerpo: { padding: 20 },
+  formGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+  campo: { display: "flex", flexDirection: "column", gap: 6 },
+  campoFull: { display: "flex", flexDirection: "column", gap: 6, gridColumn: "1 / -1" },
+  label: { fontSize: 12, color: "var(--texto-sec)", fontWeight: 500 },
+  input: { background: "var(--superficie-alta)", border: "1px solid var(--borde)", borderRadius: 8, padding: "9px 12px", color: "var(--texto)", fontSize: 13.5, outline: "none", width: "100%", boxSizing: "border-box" },
+  fotoPreview: { width: 64, height: 64, borderRadius: 10, background: "var(--superficie-alta)", border: "1px solid var(--borde)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden", flexShrink: 0 },
+  segmentado: { display: "flex", background: "var(--superficie-alta)", borderRadius: 8, padding: 3, border: "1px solid var(--borde)" },
+  segmentoBtn: { flex: 1, padding: "7px 0", borderRadius: 6, border: "none", background: "transparent", color: "var(--texto-sec)", fontSize: 13, fontWeight: 500, cursor: "pointer" },
+  segmentoBtnActivo: { background: "var(--verde)", color: "#0F1B03" },
+  segmentoBtnActivoSalida: { background: "var(--rojo)", color: "#3A0A0A" },
+  modalFooter: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, paddingTop: 16, borderTop: "1px solid var(--borde)" },
+  mensajeConfirmar: { fontSize: 13.5, color: "var(--texto-sec)", lineHeight: 1.6 },
+  avisoError: { fontSize: 12.5, color: "var(--rojo)", marginTop: 10 },
+};
