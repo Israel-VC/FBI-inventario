@@ -19,12 +19,12 @@ import {
 const CATEGORIAS = ["Paneles", "Sensores", "Sirenas", "Cámaras", "Teclados", "Baterías", "Cableado", "Accesorios"];
 
 function formatoMoneda(n) {
-  return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n || 0);
+  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n || 0);
 }
 
 function formatoFecha(f) {
   const d = new Date(f);
-  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 export default function InventarioAlarmas({ sesion }) {
