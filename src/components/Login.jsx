@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { ShieldCheck } from "lucide-react";
+import { LOGO_FBI } from "../lib/logo";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -23,10 +23,7 @@ export default function Login() {
     <div style={estilos.contenedor}>
       <div style={estilos.tarjeta}>
         <div style={estilos.marca}>
-          <div style={estilos.icono}>
-            <ShieldCheck size={22} color="#D97706" strokeWidth={2} />
-          </div>
-          <div style={estilos.marcaTitulo}>FBI Central de Alarmas</div>
+          <img src={LOGO_FBI} alt="FBI Central de Alarmas" style={estilos.logo} />
           <div style={estilos.marcaSub}>Sistema de inventario</div>
         </div>
 
@@ -85,16 +82,7 @@ const estilos = {
     padding: "32px 28px",
   },
   marca: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginBottom: 28 },
-  icono: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    background: "rgba(217,119,6,0.12)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-  },
+  logo: { width: 200, height: "auto", objectFit: "contain", marginBottom: 4 },
   marcaTitulo: { fontSize: 17, fontWeight: 600, color: "#EDEEF0", textAlign: "center" },
   marcaSub: { fontSize: 12.5, color: "#9BA0A8" },
   form: { display: "flex", flexDirection: "column", gap: 16 },
