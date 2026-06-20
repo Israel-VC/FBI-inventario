@@ -34,6 +34,24 @@ function formatoFecha(f) {
   return d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+function normalizarNumeroCliente(valor) {
+  const limpio = (valor || "").trim();
+  if (!limpio) return null;
+  return limpio.padStart(4, "0");
+}
+
+function colorEstadoCliente(estado) {
+  if (estado === "suspendido") return "var(--ambar)";
+  if (estado === "baja") return "var(--rojo)";
+  return "var(--verde)";
+}
+
+function etiquetaEstadoCliente(estado) {
+  if (estado === "suspendido") return "Suspendido temporalmente";
+  if (estado === "baja") return "De baja";
+  return "Activo";
+}
+
 export default function InventarioAlarmas({ sesion, perfil }) {
   const nombreUsuario = perfil?.nombre || sesion.user.email;
   const [vista, setVista] = useState("inventario");
@@ -199,7 +217,7 @@ export default function InventarioAlarmas({ sesion, perfil }) {
       nombre: cliente.nombre,
       domicilio: cliente.domicilio,
       telefono: cliente.telefono,
-      numero_cliente: (cliente.numero_cliente || "").trim() || null,
+      numero_cliente: normalizarNumeroCliente(cliente.numero_cliente),
       cuota_mensual: Number(cliente.cuota_mensual) || 0,
       estado: cliente.estado || "activo",
       frecuencia_pago: cliente.frecuencia_pago || "mensual",
@@ -654,7 +672,14 @@ function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, onN
             <div key={c.id} style={estilos.tarjetaCliente}>
               <div style={estilos.clienteHeader}>
                 <div>
-                  <div style={estilos.clienteNombre}>{c.nombre}</div>
+                  <div style={estilos.clienteNombre}>
+                    <span
+                      style={{ ...estilos.puntoEstadoCliente, background: colorEstadoCliente(c.estado) }}
+                      title={etiquetaEstadoCliente(c.estado)}
+                    />
+                    {c.numero_cliente ? `${c.numero_cliente} — ` : ""}
+                    {c.nombre}
+                  </div>
                   <div style={estilos.clienteDomicilio}>{c.domicilio}</div>
                   {c.telefono && <div style={estilos.clienteTelefono}>{c.telefono}</div>}
                 </div>
@@ -1534,7 +1559,8 @@ const estilos = {
   listaClientes: { display: "flex", flexDirection: "column", gap: 12 },
   tarjetaCliente: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 12, padding: 16 },
   clienteHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" },
-  clienteNombre: { fontSize: 14.5, fontWeight: 600 },
+  clienteNombre: { fontSize: 14.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 },
+  puntoEstadoCliente: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0, display: "inline-block" },
   clienteDomicilio: { fontSize: 12.5, color: "var(--texto-sec)", marginTop: 3 },
   clienteTelefono: { fontSize: 12.5, color: "var(--muted)", marginTop: 2 },
   equiposLista: { display: "flex", flexDirection: "column", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--borde)" },
