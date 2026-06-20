@@ -424,7 +424,9 @@ function Encabezado({ vista, setVista, alertas, sesion, onCerrarSesion }) {
   return (
     <div style={estilos.encabezado}>
       <div style={estilos.marca}>
-        <img src={LOGO_FBI} alt="FBI Central de Alarmas" style={estilos.logoEncabezado} />
+        <div style={estilos.fondoLogo}>
+          <img src={LOGO_FBI} alt="FBI Central de Alarmas" style={estilos.logoEncabezado} />
+        </div>
         <div>
           <div style={estilos.marcaTitulo}>FBI Central de Alarmas</div>
           <div style={estilos.marcaSub}>Inventario · {sesion.user.email}</div>
@@ -1356,7 +1358,14 @@ const estilos = {
     gap: 16,
   },
   marca: { display: "flex", alignItems: "center", gap: 12 },
-  logoEncabezado: { height: 38, width: "auto", objectFit: "contain" },
+  logoEncabezado: { height: 30, width: "auto", objectFit: "contain", display: "block" },
+  fondoLogo: {
+    background: "#FAFAF8",
+    borderRadius: 9,
+    padding: "6px 10px",
+    display: "flex",
+    alignItems: "center",
+  },
   iconoMarca: {
     width: 36,
     height: 36,
