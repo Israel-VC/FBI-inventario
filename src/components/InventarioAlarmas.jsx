@@ -43,6 +43,7 @@ export default function InventarioAlarmas({ sesion }) {
   const [modalCliente, setModalCliente] = useState(null);
   const [modalAsignar, setModalAsignar] = useState(null);
   const [confirmarBorrado, setConfirmarBorrado] = useState(null);
+  const [confirmarBorradoMovimiento, setConfirmarBorradoMovimiento] = useState(null);
 
   const cargarTodo = useCallback(async () => {
     setCargando(true);
@@ -136,6 +137,21 @@ export default function InventarioAlarmas({ sesion }) {
     cargarTodo();
   }
 
+  async function eliminarMovimiento(mov) {
+    const producto = productos.find((p) => p.id === mov.producto_id);
+    if (producto) {
+      // Revertir el efecto que tuvo este movimiento sobre el stock
+      const delta = mov.tipo === "entrada" ? -mov.cantidad : mov.cantidad;
+      const nuevoStock = Math.max(0, producto.stock + delta);
+      const { error: e1 } = await supabase.from("productos").update({ stock: nuevoStock }).eq("id", producto.id);
+      if (e1) setError("No se pudo ajustar el stock al eliminar el movimiento.");
+    }
+    const { error: e2 } = await supabase.from("movimientos").delete().eq("id", mov.id);
+    if (e2) setError("No se pudo eliminar el movimiento.");
+    setConfirmarBorradoMovimiento(null);
+    cargarTodo();
+  }
+
   async function guardarCliente(cliente) {
     const payload = { nombre: cliente.nombre, domicilio: cliente.domicilio, telefono: cliente.telefono };
     if (cliente.id) {
@@ -212,7 +228,14 @@ export default function InventarioAlarmas({ sesion }) {
           />
         )}
 
-        {vista === "movimientos" && <VistaMovimientos movimientos={movimientos} productos={productos} onNuevo={() => setModalMovimiento(true)} />}
+        {vista === "movimientos" && (
+          <VistaMovimientos
+            movimientos={movimientos}
+            productos={productos}
+            onNuevo={() => setModalMovimiento(true)}
+            onEliminar={(m) => setConfirmarBorradoMovimiento(m)}
+          />
+        )}
 
         {vista === "instalaciones" && (
           <VistaInstalaciones
@@ -247,6 +270,15 @@ export default function InventarioAlarmas({ sesion }) {
           mensaje={`¿Seguro que querés eliminar "${confirmarBorrado.nombre}" del inventario? Esta acción no se puede deshacer.`}
           onConfirmar={() => eliminarProducto(confirmarBorrado.id)}
           onCancelar={() => setConfirmarBorrado(null)}
+        />
+      )}
+
+      {confirmarBorradoMovimiento && (
+        <ModalConfirmar
+          titulo="Eliminar movimiento"
+          mensaje="¿Seguro que querés eliminar este movimiento? El stock del producto se va a ajustar automáticamente para revertir su efecto. Esta acción no se puede deshacer."
+          onConfirmar={() => eliminarMovimiento(confirmarBorradoMovimiento)}
+          onCancelar={() => setConfirmarBorradoMovimiento(null)}
         />
       )}
     </div>
@@ -377,7 +409,7 @@ function TarjetaProducto({ producto, onEditar, onEliminar }) {
   );
 }
 
-function VistaMovimientos({ movimientos, productos, onNuevo }) {
+function VistaMovimientos({ movimientos, productos, onNuevo, onEliminar }) {
   function nombreProducto(id) {
     return productos.find((p) => p.id === id)?.nombre || "Producto eliminado";
   }
@@ -419,6 +451,9 @@ function VistaMovimientos({ movimientos, productos, onNuevo }) {
                 {m.cantidad}
               </div>
               <div style={estilos.movFecha}>{formatoFecha(m.creado_en)}</div>
+              <button onClick={() => onEliminar(m)} style={estilos.iconBtn} aria-label="Eliminar movimiento">
+                <Trash2 size={14} />
+              </button>
             </div>
           ))}
         </div>
