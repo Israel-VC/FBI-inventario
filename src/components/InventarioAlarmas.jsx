@@ -34,7 +34,8 @@ function formatoFecha(f) {
   return d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-export default function InventarioAlarmas({ sesion }) {
+export default function InventarioAlarmas({ sesion, perfil }) {
+  const nombreUsuario = perfil?.nombre || sesion.user.email;
   const [vista, setVista] = useState("inventario");
   const [productos, setProductos] = useState([]);
   const [clientes, setClientes] = useState([]);
@@ -171,7 +172,7 @@ export default function InventarioAlarmas({ sesion }) {
       tipo: mov.tipo,
       cantidad: mov.cantidad,
       motivo: mov.motivo,
-      usuario_email: sesion.user.email,
+      usuario_email: nombreUsuario,
     });
     if (e1 || e2) setError("No se pudo registrar el movimiento.");
     setModalMovimiento(null);
@@ -242,7 +243,7 @@ export default function InventarioAlarmas({ sesion }) {
         tipo: "salida",
         cantidad,
         motivo: `Instalación: ${cliente?.nombre || ""}`,
-        usuario_email: sesion.user.email,
+        usuario_email: nombreUsuario,
         creado_en: new Date(fechaInstalacion + "T12:00:00").toISOString(),
       }));
     }
@@ -263,7 +264,7 @@ export default function InventarioAlarmas({ sesion }) {
       total,
       estado: cotizacion.estado || "pendiente",
       notas: cotizacion.notas || "",
-      usuario_email: sesion.user.email,
+      usuario_email: nombreUsuario,
     };
     if (cotizacion.id) {
       const { error } = await supabase.from("cotizaciones").update(payload).eq("id", cotizacion.id);
@@ -303,7 +304,7 @@ export default function InventarioAlarmas({ sesion }) {
 
   return (
     <div style={estilos.app}>
-      <Encabezado vista={vista} setVista={setVista} alertas={productosStockBajo.length} sesion={sesion} onCerrarSesion={cerrarSesion} />
+      <Encabezado vista={vista} setVista={setVista} alertas={productosStockBajo.length} nombreUsuario={nombreUsuario} onCerrarSesion={cerrarSesion} />
 
       {error && (
         <div style={estilos.bannerError}>
@@ -424,7 +425,7 @@ export default function InventarioAlarmas({ sesion }) {
   );
 }
 
-function Encabezado({ vista, setVista, alertas, sesion, onCerrarSesion }) {
+function Encabezado({ vista, setVista, alertas, nombreUsuario, onCerrarSesion }) {
   const tabs = [
     { id: "inventario", label: "Inventario", icon: Package },
     { id: "movimientos", label: "Movimientos", icon: ArrowUpDown },
@@ -440,7 +441,7 @@ function Encabezado({ vista, setVista, alertas, sesion, onCerrarSesion }) {
         </div>
         <div>
           <div style={estilos.marcaTitulo}>FBI Central de Alarmas</div>
-          <div style={estilos.marcaSub}>Inventario · {sesion.user.email}</div>
+          <div style={estilos.marcaSub}>Inventario · {nombreUsuario}</div>
         </div>
       </div>
       <div style={estilos.tabs}>
