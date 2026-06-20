@@ -578,7 +578,7 @@ function ModalProducto({ producto, onGuardar, onCerrar }) {
           <input value={form.modelo} onChange={(e) => actualizar("modelo", e.target.value)} style={estilos.input} placeholder="Ej: PC1864" />
         </Campo>
 
-        <Campo label="Precio (ARS)">
+        <Campo label="Precio (MXN)">
           <input type="number" value={form.precio} onChange={(e) => actualizar("precio", e.target.value)} style={estilos.input} placeholder="0" />
         </Campo>
 
