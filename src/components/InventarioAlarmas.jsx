@@ -45,6 +45,7 @@ export default function InventarioAlarmas({ sesion }) {
 
   const [busqueda, setBusqueda] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("Todas");
+  const [alertaStockVisible, setAlertaStockVisible] = useState(true);
 
   const [modalProducto, setModalProducto] = useState(null);
   const [modalMovimiento, setModalMovimiento] = useState(null);
@@ -235,6 +236,7 @@ export default function InventarioAlarmas({ sesion }) {
         cantidad,
         motivo: `Instalación: ${cliente?.nombre || ""}`,
         usuario_email: sesion.user.email,
+        creado_en: new Date(fechaInstalacion + "T12:00:00").toISOString(),
       }));
     }
 
@@ -355,7 +357,9 @@ export default function InventarioAlarmas({ sesion }) {
         {vista === "cobranza" && <Cobranza sesion={sesion} clientes={clientes} onClientesActualizados={cargarTodo} />}
       </div>
 
-      {productosStockBajo.length > 0 && vista === "inventario" && <BarraAlertas productos={productosStockBajo} />}
+      {productosStockBajo.length > 0 && vista === "inventario" && alertaStockVisible && (
+        <BarraAlertas productos={productosStockBajo} onCerrar={() => setAlertaStockVisible(false)} />
+      )}
 
       {modalProducto && (
         <ModalProducto producto={modalProducto === "nuevo" ? null : modalProducto} onGuardar={guardarProducto} onCerrar={() => setModalProducto(null)} />
@@ -593,15 +597,17 @@ function VistaMovimientos({ movimientos, productos, onNuevo, onEliminar }) {
 }
 
 function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, onNuevoCliente, onEditarCliente, onAsignar }) {
+  const [avisoMantenimientoVisible, setAvisoMantenimientoVisible] = useState(true);
+
   function nombreProducto(id) {
     return productos.find((p) => p.id === id)?.nombre || "Producto eliminado";
   }
   return (
     <div>
-      {equiposParaMantenimiento.length > 0 && (
+      {equiposParaMantenimiento.length > 0 && avisoMantenimientoVisible && (
         <div style={estilos.avisoMantenimiento}>
           <BatteryWarning size={17} color="var(--ambar)" strokeWidth={2} />
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={estilos.avisoMantenimientoTitulo}>
               {equiposParaMantenimiento.length} equipo{equiposParaMantenimiento.length > 1 ? "s" : ""} con 3+ años instalado{equiposParaMantenimiento.length > 1 ? "s" : ""}
             </div>
@@ -614,6 +620,9 @@ function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, onN
               {equiposParaMantenimiento.length > 3 ? "…" : ""}
             </div>
           </div>
+          <button onClick={() => setAvisoMantenimientoVisible(false)} style={estilos.cerrarAviso} aria-label="Cerrar aviso">
+            <X size={15} />
+          </button>
         </div>
       )}
 
@@ -735,7 +744,7 @@ function VistaCotizaciones({ cotizaciones, onNueva, onVer, onEditar, onEliminar,
     </div>
   );
 }
-function BarraAlertas({ productos }) {
+function BarraAlertas({ productos, onCerrar }) {
   return (
     <div style={estilos.barraAlertas}>
       <AlertTriangle size={16} color="var(--ambar)" strokeWidth={2} />
@@ -743,6 +752,9 @@ function BarraAlertas({ productos }) {
         Stock bajo en {productos.length} producto{productos.length > 1 ? "s" : ""}: {productos.slice(0, 3).map((p) => p.nombre).join(", ")}
         {productos.length > 3 ? "…" : ""}
       </span>
+      <button onClick={onCerrar} style={estilos.cerrarAvisoFlotante} aria-label="Cerrar aviso">
+        <X size={14} />
+      </button>
     </div>
   );
 }
@@ -1534,4 +1546,31 @@ const estilos = {
   },
   avisoMantenimientoTitulo: { fontSize: 13, fontWeight: 600, color: "var(--texto)" },
   avisoMantenimientoTexto: { fontSize: 12.5, color: "var(--texto-sec)", marginTop: 3 },
+  cerrarAviso: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    border: "none",
+    background: "transparent",
+    color: "var(--texto-sec)",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  cerrarAvisoFlotante: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    border: "none",
+    background: "transparent",
+    color: "var(--texto-sec)",
+    cursor: "pointer",
+    flexShrink: 0,
+    marginLeft: 4,
+  },
 };
