@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { Plus, X, Trash2, Edit2, Search, Wallet, RefreshCw, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Plus, X, Trash2, Edit2, Search, Wallet, RefreshCw, CheckCircle2, Clock, AlertCircle, Printer } from "lucide-react";
+import { LOGO_FBI } from "../lib/logo";
 
 function formatoMoneda(n) {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n || 0);
@@ -220,6 +221,7 @@ export default function Cobranza({ sesion, clientes, onClientesActualizados }) {
       {subvista === "servicios" && (
         <VistaServicios
           cargos={cargosServicio}
+          clientes={clientes}
           nombreCliente={nombreCliente}
           saldoPendiente={saldoPendiente}
           onNuevo={() => setModalServicio("nuevo")}
@@ -285,7 +287,59 @@ function VistaMonitoreo({ cargos, clientes, nombreCliente, saldoPendiente, total
   }, [cargos]);
 
   const cargosDelPeriodo = cargos.filter((c) => c.periodo === filtroPeriodo);
+  const cargosPendientesDelPeriodo = cargosDelPeriodo.filter((c) => c.estado !== "pagado");
   const totalPendientePeriodo = cargosDelPeriodo.reduce((acc, c) => acc + saldoPendiente(c, true), 0);
+
+  function datosCliente(clienteId) {
+    return clientes.find((c) => c.id === clienteId) || {};
+  }
+
+  function imprimirListaDeuda() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let y = 20;
+
+    const logoAncho = 40;
+    const logoAlto = logoAncho * (254 / 500);
+    doc.addImage(LOGO_FBI, "PNG", 14, 10, logoAncho, logoAlto);
+    y = 10 + logoAlto + 10;
+
+    doc.setFontSize(13);
+    doc.setFont(undefined, "bold");
+    doc.text(`Clientes con monitoreo pendiente — ${nombrePeriodo(filtroPeriodo)}`, 14, y);
+    y += 10;
+
+    doc.setFontSize(9);
+    doc.setFont(undefined, "bold");
+    doc.text("Cliente", 14, y);
+    doc.text("Domicilio", 75, y);
+    doc.text("Teléfono", 135, y);
+    doc.text("Monto", 178, y);
+    y += 3;
+    doc.line(14, y, 196, y);
+    y += 6;
+    doc.setFont(undefined, "normal");
+
+    cargosPendientesDelPeriodo.forEach((c) => {
+      const cliente = datosCliente(c.cliente_id);
+      if (y > 275) {
+        doc.addPage();
+        y = 20;
+      }
+      const nombre = `${cliente.numero_cliente ? cliente.numero_cliente + " — " : ""}${cliente.nombre || ""}`;
+      doc.text(nombre.slice(0, 28), 14, y);
+      doc.text((cliente.domicilio || "").slice(0, 28), 75, y);
+      doc.text(cliente.telefono || "—", 135, y);
+      doc.text(formatoMoneda(saldoPendiente(c, true)), 178, y);
+      y += 7;
+    });
+
+    y += 4;
+    doc.setFont(undefined, "bold");
+    doc.text(`Total pendiente: ${formatoMoneda(cargosPendientesDelPeriodo.reduce((a, c) => a + saldoPendiente(c, true), 0))}`, 14, y);
+
+    doc.save(`monitoreo-pendiente-${filtroPeriodo}.pdf`);
+  }
 
   return (
     <div>
@@ -298,6 +352,11 @@ function VistaMonitoreo({ cargos, clientes, nombreCliente, saldoPendiente, total
           ))}
         </select>
         <div style={{ flex: 1 }} />
+        {cargosPendientesDelPeriodo.length > 0 && (
+          <button onClick={imprimirListaDeuda} style={estilos.btnSecundario}>
+            <Printer size={15} /> Imprimir lista de deuda
+          </button>
+        )}
         <button onClick={onGenerarCargos} disabled={generando} style={estilos.btnPrimario}>
           <RefreshCw size={15} /> {generando ? "Generando..." : "Generar cargos del mes"}
         </button>
@@ -315,7 +374,7 @@ function VistaMonitoreo({ cargos, clientes, nombreCliente, saldoPendiente, total
       </div>
 
       {cargosDelPeriodo.length === 0 ? (
-        <EstadoVacio mensaje={`No hay cargos generados para ${nombrePeriodo(filtroPeriodo)}. Usá el botón "Generar cargos del mes".`} />
+        <EstadoVacio mensaje={`No hay cargos generados para ${nombrePeriodo(filtroPeriodo)}. Usa el botón "Generar cargos del mes".`} />
       ) : (
         <div style={estilos.lista}>
           {cargosDelPeriodo.map((c) => (
@@ -338,8 +397,62 @@ function VistaMonitoreo({ cargos, clientes, nombreCliente, saldoPendiente, total
 }
 
 // ---------- Vista: Cargos por servicios ----------
-function VistaServicios({ cargos, nombreCliente, saldoPendiente, onNuevo, onEditar, onPagar, onEliminar }) {
-  const totalPendiente = cargos.filter((c) => c.estado !== "pagado").reduce((acc, c) => acc + saldoPendiente(c, false), 0);
+function VistaServicios({ cargos, clientes, nombreCliente, saldoPendiente, onNuevo, onEditar, onPagar, onEliminar }) {
+  const cargosPendientes = cargos.filter((c) => c.estado !== "pagado");
+  const totalPendiente = cargosPendientes.reduce((acc, c) => acc + saldoPendiente(c, false), 0);
+
+  function datosCliente(clienteId) {
+    return clientes.find((c) => c.id === clienteId) || {};
+  }
+
+  function imprimirListaDeuda() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let y = 20;
+
+    const logoAncho = 40;
+    const logoAlto = logoAncho * (254 / 500);
+    doc.addImage(LOGO_FBI, "PNG", 14, 10, logoAncho, logoAlto);
+    y = 10 + logoAlto + 10;
+
+    doc.setFontSize(13);
+    doc.setFont(undefined, "bold");
+    doc.text("Clientes con cargos por servicio pendientes", 14, y);
+    y += 10;
+
+    doc.setFontSize(9);
+    doc.setFont(undefined, "bold");
+    doc.text("Cliente", 14, y);
+    doc.text("Domicilio", 65, y);
+    doc.text("Teléfono", 115, y);
+    doc.text("Concepto", 150, y);
+    doc.text("Monto", 182, y);
+    y += 3;
+    doc.line(14, y, 196, y);
+    y += 6;
+    doc.setFont(undefined, "normal");
+
+    cargosPendientes.forEach((c) => {
+      const cliente = datosCliente(c.cliente_id);
+      if (y > 275) {
+        doc.addPage();
+        y = 20;
+      }
+      const nombre = `${cliente.numero_cliente ? cliente.numero_cliente + " — " : ""}${cliente.nombre || ""}`;
+      doc.text(nombre.slice(0, 22), 14, y);
+      doc.text((cliente.domicilio || "").slice(0, 22), 65, y);
+      doc.text(cliente.telefono || "—", 115, y);
+      doc.text(c.concepto.slice(0, 16), 150, y);
+      doc.text(formatoMoneda(saldoPendiente(c, false)), 182, y);
+      y += 7;
+    });
+
+    y += 4;
+    doc.setFont(undefined, "bold");
+    doc.text(`Total pendiente: ${formatoMoneda(totalPendiente)}`, 14, y);
+
+    doc.save("servicios-pendientes.pdf");
+  }
 
   return (
     <div>
@@ -348,6 +461,11 @@ function VistaServicios({ cargos, nombreCliente, saldoPendiente, onNuevo, onEdit
           <div style={estilos.tituloSeccion}>Cargos por servicios</div>
           <div style={estilos.subtituloSeccion}>Instalaciones iniciales, upgrades, visitas técnicas</div>
         </div>
+        {cargosPendientes.length > 0 && (
+          <button onClick={imprimirListaDeuda} style={estilos.btnSecundario}>
+            <Printer size={15} /> Imprimir lista de deuda
+          </button>
+        )}
         <button onClick={onNuevo} style={estilos.btnPrimario}>
           <Plus size={15} /> Nuevo cargo
         </button>
