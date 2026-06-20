@@ -24,6 +24,12 @@ function periodoActual() {
   return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function normalizarNumeroCliente(valor) {
+  const limpio = (valor || "").trim();
+  if (!limpio) return null;
+  return limpio.padStart(4, "0");
+}
+
 export default function Cobranza({ sesion, clientes, onClientesActualizados }) {
   const [subvista, setSubvista] = useState("monitoreo"); // monitoreo | servicios
   const [cargosMonitoreo, setCargosMonitoreo] = useState([]);
@@ -509,7 +515,7 @@ function VistaServicios({ cargos, clientes, nombreCliente, saldoPendiente, onNue
 // ---------- Vista: datos de cobranza por cliente ----------
 function VistaClientesCobranza({ clientes, busqueda, setBusqueda, deudaPorCliente, onEditar }) {
   const etiquetaEstado = { activo: "Activo", suspendido: "Suspendido", baja: "De baja" };
-  const colorEstado = { activo: "var(--verde)", suspendido: "var(--ambar)", baja: "var(--muted)" };
+  const colorEstado = { activo: "var(--verde)", suspendido: "var(--ambar)", baja: "var(--rojo)" };
 
   return (
     <div>
@@ -528,11 +534,12 @@ function VistaClientesCobranza({ clientes, busqueda, setBusqueda, deudaPorClient
             <div key={c.id} style={estilos.filaCliente}>
               <div style={{ flex: 1 }}>
                 <div style={estilos.filaClienteNombre}>
+                  <span style={{ ...estilos.puntoEstadoCliente, background: colorEstado[c.estado] }} title={etiquetaEstado[c.estado]} />
                   {c.numero_cliente ? `${c.numero_cliente} — ` : "(sin número) "}
                   {c.nombre}
                 </div>
                 <div style={estilos.filaClienteSub}>
-                  Cuota mensual: {formatoMoneda(c.cuota_mensual)} ·{" "}
+                  Cuota: {formatoMoneda(c.cuota_mensual)} ({c.frecuencia_pago || "mensual"}) ·{" "}
                   <span style={{ color: colorEstado[c.estado] }}>{etiquetaEstado[c.estado]}</span>
                 </div>
               </div>
@@ -621,7 +628,7 @@ function ModalDatosCliente({ cliente, onGuardar, onCerrar }) {
 
   function enviar() {
     onGuardar({
-      numero_cliente: numeroCliente.trim(),
+      numero_cliente: normalizarNumeroCliente(numeroCliente),
       cuota_mensual: Number(cuotaMensual) || 0,
       estado,
       frecuencia_pago: frecuenciaPago,
@@ -815,7 +822,8 @@ const estilos = {
   filaCargoMonto: { fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600 },
   filaCargoPagado: { fontSize: 11, color: "var(--verde)", marginTop: 2 },
   filaCliente: { display: "flex", alignItems: "center", gap: 12, background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 10, padding: "12px 16px" },
-  filaClienteNombre: { fontSize: 13.5, fontWeight: 500 },
+  filaClienteNombre: { fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 7 },
+  puntoEstadoCliente: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0, display: "inline-block" },
   filaClienteSub: { fontSize: 12, color: "var(--texto-sec)", marginTop: 3 },
   deudaBadge: { fontSize: 12, fontWeight: 600, color: "var(--rojo)", background: "rgba(226,75,74,0.1)", padding: "5px 10px", borderRadius: 7, whiteSpace: "nowrap" },
   estadoVacio: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "60px 0", color: "var(--texto-sec)" },
