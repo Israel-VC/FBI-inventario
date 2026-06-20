@@ -194,7 +194,14 @@ export default function InventarioAlarmas({ sesion }) {
   }
 
   async function guardarCliente(cliente) {
-    const payload = { nombre: cliente.nombre, domicilio: cliente.domicilio, telefono: cliente.telefono };
+    const payload = {
+      nombre: cliente.nombre,
+      domicilio: cliente.domicilio,
+      telefono: cliente.telefono,
+      numero_cliente: (cliente.numero_cliente || "").trim() || null,
+      cuota_mensual: Number(cliente.cuota_mensual) || 0,
+      estado: cliente.estado || "activo",
+    };
     if (cliente.id) {
       const { error } = await supabase.from("clientes").update(payload).eq("id", cliente.id);
       if (error) return setError("No se pudo actualizar el cliente.");
@@ -390,7 +397,7 @@ export default function InventarioAlarmas({ sesion }) {
       {confirmarBorrado && (
         <ModalConfirmar
           titulo="Eliminar producto"
-          mensaje={`¿Seguro que querés eliminar "${confirmarBorrado.nombre}" del inventario? Esta acción no se puede deshacer.`}
+          mensaje={`¿Seguro que quieres eliminar "${confirmarBorrado.nombre}" del inventario? Esta acción no se puede deshacer.`}
           onConfirmar={() => eliminarProducto(confirmarBorrado.id)}
           onCancelar={() => setConfirmarBorrado(null)}
         />
@@ -399,7 +406,7 @@ export default function InventarioAlarmas({ sesion }) {
       {confirmarBorradoMovimiento && (
         <ModalConfirmar
           titulo="Eliminar movimiento"
-          mensaje="¿Seguro que querés eliminar este movimiento? El stock del producto se va a ajustar automáticamente para revertir su efecto. Esta acción no se puede deshacer."
+          mensaje="¿Seguro que quieres eliminar este movimiento? El stock del producto se va a ajustar automáticamente para revertir su efecto. Esta acción no se puede deshacer."
           onConfirmar={() => eliminarMovimiento(confirmarBorradoMovimiento)}
           onCancelar={() => setConfirmarBorradoMovimiento(null)}
         />
@@ -408,7 +415,7 @@ export default function InventarioAlarmas({ sesion }) {
       {confirmarBorradoCotizacion && (
         <ModalConfirmar
           titulo="Eliminar cotización"
-          mensaje={`¿Seguro que querés eliminar la cotización de "${confirmarBorradoCotizacion.cliente_nombre}"? Esta acción no se puede deshacer.`}
+          mensaje={`¿Seguro que quieres eliminar la cotización de "${confirmarBorradoCotizacion.cliente_nombre}"? Esta acción no se puede deshacer.`}
           onConfirmar={() => eliminarCotizacion(confirmarBorradoCotizacion)}
           onCancelar={() => setConfirmarBorradoCotizacion(null)}
         />
@@ -921,7 +928,9 @@ function ModalMovimiento({ productos, onGuardar, onCerrar }) {
 }
 
 function ModalCliente({ cliente, onGuardar, onCerrar }) {
-  const [form, setForm] = useState(cliente || { nombre: "", domicilio: "", telefono: "" });
+  const [form, setForm] = useState(
+    cliente || { nombre: "", domicilio: "", telefono: "", numero_cliente: "", cuota_mensual: "", estado: "activo" }
+  );
 
   function enviar() {
     if (!form.nombre.trim() || !form.domicilio.trim()) return;
@@ -935,10 +944,35 @@ function ModalCliente({ cliente, onGuardar, onCerrar }) {
           <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} style={estilos.input} placeholder="Ej: Farmacia Don Bosco" />
         </Campo>
         <Campo label="Domicilio" full>
-          <input value={form.domicilio} onChange={(e) => setForm((f) => ({ ...f, domicilio: e.target.value }))} style={estilos.input} placeholder="Ej: Av. San Martín 452" />
+          <input value={form.domicilio} onChange={(e) => setForm((f) => ({ ...f, domicilio: e.target.value }))} style={estilos.input} placeholder="Ej: Av. Reforma 452" />
         </Campo>
-        <Campo label="Teléfono" full>
-          <input value={form.telefono} onChange={(e) => setForm((f) => ({ ...f, telefono: e.target.value }))} style={estilos.input} placeholder="Ej: 266-4123456" />
+        <Campo label="Teléfono">
+          <input value={form.telefono} onChange={(e) => setForm((f) => ({ ...f, telefono: e.target.value }))} style={estilos.input} placeholder="Ej: 461 123 4567" />
+        </Campo>
+        <Campo label="Número de cliente (4 dígitos)">
+          <input
+            value={form.numero_cliente || ""}
+            onChange={(e) => setForm((f) => ({ ...f, numero_cliente: e.target.value }))}
+            style={estilos.input}
+            placeholder="Ej: 1024"
+            maxLength={4}
+          />
+        </Campo>
+        <Campo label="Cuota mensual de monitoreo (MXN)">
+          <input
+            type="number"
+            value={form.cuota_mensual || ""}
+            onChange={(e) => setForm((f) => ({ ...f, cuota_mensual: e.target.value }))}
+            style={estilos.input}
+            placeholder="0"
+          />
+        </Campo>
+        <Campo label="Estado">
+          <select value={form.estado || "activo"} onChange={(e) => setForm((f) => ({ ...f, estado: e.target.value }))} style={estilos.select}>
+            <option value="activo">Activo</option>
+            <option value="suspendido">Suspendido temporalmente</option>
+            <option value="baja">De baja</option>
+          </select>
         </Campo>
       </div>
       <div style={estilos.modalFooter}>
