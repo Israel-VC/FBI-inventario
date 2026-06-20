@@ -616,9 +616,17 @@ function ModalDatosCliente({ cliente, onGuardar, onCerrar }) {
   const [numeroCliente, setNumeroCliente] = useState(cliente.numero_cliente || "");
   const [cuotaMensual, setCuotaMensual] = useState(cliente.cuota_mensual || "");
   const [estado, setEstado] = useState(cliente.estado || "activo");
+  const [frecuenciaPago, setFrecuenciaPago] = useState(cliente.frecuencia_pago || "mensual");
+  const [fechaAlta, setFechaAlta] = useState(cliente.fecha_alta || "");
 
   function enviar() {
-    onGuardar({ numero_cliente: numeroCliente.trim(), cuota_mensual: Number(cuotaMensual) || 0, estado });
+    onGuardar({
+      numero_cliente: numeroCliente.trim(),
+      cuota_mensual: Number(cuotaMensual) || 0,
+      estado,
+      frecuencia_pago: frecuenciaPago,
+      fecha_alta: fechaAlta || null,
+    });
   }
 
   return (
@@ -627,9 +635,21 @@ function ModalDatosCliente({ cliente, onGuardar, onCerrar }) {
         <Campo label="Número de cliente (4 dígitos)">
           <input value={numeroCliente} onChange={(e) => setNumeroCliente(e.target.value)} style={estilos.input} placeholder="Ej: 1024" maxLength={4} />
         </Campo>
-        <Campo label="Cuota mensual (MXN)">
+        <Campo label="Cuota de monitoreo (MXN)">
           <input type="number" value={cuotaMensual} onChange={(e) => setCuotaMensual(e.target.value)} style={estilos.input} placeholder="0" />
         </Campo>
+        <Campo label="Frecuencia de pago">
+          <select value={frecuenciaPago} onChange={(e) => setFrecuenciaPago(e.target.value)} style={estilos.select}>
+            <option value="mensual">Mensual</option>
+            <option value="semestral">Semestral</option>
+            <option value="anual">Anual</option>
+          </select>
+        </Campo>
+        {frecuenciaPago !== "mensual" && (
+          <Campo label="Fecha de alta (define el mes de cobro)">
+            <input type="date" value={fechaAlta} onChange={(e) => setFechaAlta(e.target.value)} style={estilos.input} />
+          </Campo>
+        )}
         <Campo label="Estado" full>
           <select value={estado} onChange={(e) => setEstado(e.target.value)} style={estilos.select}>
             <option value="activo">Activo</option>
