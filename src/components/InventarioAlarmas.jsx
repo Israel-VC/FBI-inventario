@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { LOGO_FBI } from "../lib/logo";
 import {
   Search,
   Plus,
@@ -12,8 +13,12 @@ import {
   Edit2,
   AlertTriangle,
   ChevronRight,
-  ShieldCheck,
   LogOut,
+  FileText,
+  Download,
+  MessageCircle,
+  BatteryWarning,
+  Minus,
 } from "lucide-react";
 
 const CATEGORIAS = ["Paneles", "Sensores", "Sirenas", "Cámaras", "Teclados", "Baterías", "Cableado", "Accesorios"];
@@ -32,6 +37,7 @@ export default function InventarioAlarmas({ sesion }) {
   const [productos, setProductos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
+  const [cotizaciones, setCotizaciones] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
 
@@ -42,29 +48,44 @@ export default function InventarioAlarmas({ sesion }) {
   const [modalMovimiento, setModalMovimiento] = useState(null);
   const [modalCliente, setModalCliente] = useState(null);
   const [modalAsignar, setModalAsignar] = useState(null);
+  const [modalCotizacion, setModalCotizacion] = useState(null);
+  const [verCotizacion, setVerCotizacion] = useState(null);
   const [confirmarBorrado, setConfirmarBorrado] = useState(null);
   const [confirmarBorradoMovimiento, setConfirmarBorradoMovimiento] = useState(null);
+  const [confirmarBorradoCotizacion, setConfirmarBorradoCotizacion] = useState(null);
 
   const cargarTodo = useCallback(async () => {
     setCargando(true);
     setError("");
     try {
-      const [{ data: prod, error: e1 }, { data: cli, error: e2 }, { data: eq, error: e3 }, { data: mov, error: e4 }] = await Promise.all([
+      const [
+        { data: prod, error: e1 },
+        { data: cli, error: e2 },
+        { data: eq, error: e3 },
+        { data: mov, error: e4 },
+        { data: cot, error: e5 },
+      ] = await Promise.all([
         supabase.from("productos").select("*").order("creado_en", { ascending: false }),
         supabase.from("clientes").select("*").order("creado_en", { ascending: false }),
         supabase.from("equipos_instalados").select("*"),
         supabase.from("movimientos").select("*").order("creado_en", { ascending: false }).limit(100),
+        supabase.from("cotizaciones").select("*").order("creado_en", { ascending: false }),
       ]);
-      if (e1 || e2 || e3 || e4) throw e1 || e2 || e3 || e4;
+      if (e1 || e2 || e3 || e4 || e5) throw e1 || e2 || e3 || e4 || e5;
 
       const clientesConEquipos = (cli || []).map((c) => ({
         ...c,
-        equipos: (eq || []).filter((e) => e.cliente_id === c.id).map((e) => ({ productoId: e.producto_id, cantidad: e.cantidad })),
+        equipos: (eq || []).filter((e) => e.cliente_id === c.id).map((e) => ({
+          productoId: e.producto_id,
+          cantidad: e.cantidad,
+          fechaInstalacion: e.fecha_instalacion,
+        })),
       }));
 
       setProductos(prod || []);
       setClientes(clientesConEquipos);
       setMovimientos(mov || []);
+      setCotizaciones(cot || []);
     } catch (err) {
       setError("No se pudo cargar la información. Revisá tu conexión e intentá de nuevo.");
     } finally {
@@ -88,6 +109,23 @@ export default function InventarioAlarmas({ sesion }) {
   }, [productos, busqueda, filtroCategoria]);
 
   const productosStockBajo = useMemo(() => productos.filter((p) => p.stock <= p.minimo), [productos]);
+
+  const equiposParaMantenimiento = useMemo(() => {
+    const hoy = new Date();
+    const resultado = [];
+    clientes.forEach((c) => {
+      c.equipos.forEach((eq) => {
+        if (!eq.fechaInstalacion) return;
+        const fecha = new Date(eq.fechaInstalacion);
+        const anios = (hoy - fecha) / (1000 * 60 * 60 * 24 * 365.25);
+        if (anios >= 3) {
+          const producto = productos.find((p) => p.id === eq.productoId);
+          resultado.push({ cliente: c, producto, anios: Math.floor(anios) });
+        }
+      });
+    });
+    return resultado;
+  }, [clientes, productos]);
 
   async function guardarProducto(producto) {
     const payload = {
@@ -187,6 +225,43 @@ export default function InventarioAlarmas({ sesion }) {
     cargarTodo();
   }
 
+  async function guardarCotizacion(cotizacion) {
+    const total = cotizacion.items.reduce((acc, it) => acc + it.precio * it.cantidad, 0) + Number(cotizacion.manoDeObra || 0);
+    const payload = {
+      cliente_id: cotizacion.clienteId || null,
+      cliente_nombre: cotizacion.clienteNombre,
+      cliente_telefono: cotizacion.clienteTelefono,
+      items: cotizacion.items,
+      mano_de_obra: Number(cotizacion.manoDeObra) || 0,
+      total,
+      estado: cotizacion.estado || "pendiente",
+      notas: cotizacion.notas || "",
+      usuario_email: sesion.user.email,
+    };
+    if (cotizacion.id) {
+      const { error } = await supabase.from("cotizaciones").update(payload).eq("id", cotizacion.id);
+      if (error) return setError("No se pudo actualizar la cotización.");
+    } else {
+      const { error } = await supabase.from("cotizaciones").insert(payload);
+      if (error) return setError("No se pudo crear la cotización.");
+    }
+    setModalCotizacion(null);
+    cargarTodo();
+  }
+
+  async function cambiarEstadoCotizacion(cotizacion, estado) {
+    const { error } = await supabase.from("cotizaciones").update({ estado }).eq("id", cotizacion.id);
+    if (error) setError("No se pudo actualizar el estado de la cotización.");
+    cargarTodo();
+  }
+
+  async function eliminarCotizacion(cotizacion) {
+    const { error } = await supabase.from("cotizaciones").delete().eq("id", cotizacion.id);
+    if (error) setError("No se pudo eliminar la cotización.");
+    setConfirmarBorradoCotizacion(null);
+    cargarTodo();
+  }
+
   async function cerrarSesion() {
     await supabase.auth.signOut();
   }
@@ -241,9 +316,21 @@ export default function InventarioAlarmas({ sesion }) {
           <VistaInstalaciones
             clientes={clientes}
             productos={productos}
+            equiposParaMantenimiento={equiposParaMantenimiento}
             onNuevoCliente={() => setModalCliente("nuevo")}
             onEditarCliente={(c) => setModalCliente(c)}
             onAsignar={(c) => setModalAsignar(c)}
+          />
+        )}
+
+        {vista === "cotizaciones" && (
+          <VistaCotizaciones
+            cotizaciones={cotizaciones}
+            onNueva={() => setModalCotizacion("nueva")}
+            onVer={(c) => setVerCotizacion(c)}
+            onEditar={(c) => setModalCotizacion(c)}
+            onEliminar={(c) => setConfirmarBorradoCotizacion(c)}
+            onCambiarEstado={cambiarEstadoCotizacion}
           />
         )}
       </div>
@@ -264,6 +351,18 @@ export default function InventarioAlarmas({ sesion }) {
         <ModalAsignarEquipo cliente={modalAsignar} productos={productos} onAsignar={asignarEquipo} onCerrar={() => setModalAsignar(null)} />
       )}
 
+      {modalCotizacion && (
+        <ModalCotizacion
+          cotizacion={modalCotizacion === "nueva" ? null : modalCotizacion}
+          productos={productos}
+          clientes={clientes}
+          onGuardar={guardarCotizacion}
+          onCerrar={() => setModalCotizacion(null)}
+        />
+      )}
+
+      {verCotizacion && <ModalVerCotizacion cotizacion={verCotizacion} onCerrar={() => setVerCotizacion(null)} />}
+
       {confirmarBorrado && (
         <ModalConfirmar
           titulo="Eliminar producto"
@@ -281,6 +380,15 @@ export default function InventarioAlarmas({ sesion }) {
           onCancelar={() => setConfirmarBorradoMovimiento(null)}
         />
       )}
+
+      {confirmarBorradoCotizacion && (
+        <ModalConfirmar
+          titulo="Eliminar cotización"
+          mensaje={`¿Seguro que querés eliminar la cotización de "${confirmarBorradoCotizacion.cliente_nombre}"? Esta acción no se puede deshacer.`}
+          onConfirmar={() => eliminarCotizacion(confirmarBorradoCotizacion)}
+          onCancelar={() => setConfirmarBorradoCotizacion(null)}
+        />
+      )}
     </div>
   );
 }
@@ -290,13 +398,12 @@ function Encabezado({ vista, setVista, alertas, sesion, onCerrarSesion }) {
     { id: "inventario", label: "Inventario", icon: Package },
     { id: "movimientos", label: "Movimientos", icon: ArrowUpDown },
     { id: "instalaciones", label: "Instalaciones", icon: Home },
+    { id: "cotizaciones", label: "Cotizaciones", icon: FileText },
   ];
   return (
     <div style={estilos.encabezado}>
       <div style={estilos.marca}>
-        <div style={estilos.iconoMarca}>
-          <ShieldCheck size={18} color="var(--ambar)" strokeWidth={2} />
-        </div>
+        <img src={LOGO_FBI} alt="FBI Central de Alarmas" style={estilos.logoEncabezado} />
         <div>
           <div style={estilos.marcaTitulo}>FBI Central de Alarmas</div>
           <div style={estilos.marcaSub}>Inventario · {sesion.user.email}</div>
@@ -462,12 +569,31 @@ function VistaMovimientos({ movimientos, productos, onNuevo, onEliminar }) {
   );
 }
 
-function VistaInstalaciones({ clientes, productos, onNuevoCliente, onEditarCliente, onAsignar }) {
+function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, onNuevoCliente, onEditarCliente, onAsignar }) {
   function nombreProducto(id) {
     return productos.find((p) => p.id === id)?.nombre || "Producto eliminado";
   }
   return (
     <div>
+      {equiposParaMantenimiento.length > 0 && (
+        <div style={estilos.avisoMantenimiento}>
+          <BatteryWarning size={17} color="var(--ambar)" strokeWidth={2} />
+          <div>
+            <div style={estilos.avisoMantenimientoTitulo}>
+              {equiposParaMantenimiento.length} equipo{equiposParaMantenimiento.length > 1 ? "s" : ""} con 3+ años instalado{equiposParaMantenimiento.length > 1 ? "s" : ""}
+            </div>
+            <div style={estilos.avisoMantenimientoTexto}>
+              Conviene revisar batería o estado general:{" "}
+              {equiposParaMantenimiento
+                .slice(0, 3)
+                .map((e) => `${e.cliente.nombre} (${e.anios} años)`)
+                .join(", ")}
+              {equiposParaMantenimiento.length > 3 ? "…" : ""}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={estilos.toolbar}>
         <div style={{ flex: 1 }}>
           <div style={estilos.tituloSeccion}>Instalaciones por cliente</div>
@@ -505,7 +631,9 @@ function VistaInstalaciones({ clientes, productos, onNuevoCliente, onEditarClien
                     <div key={i} style={estilos.equipoItem}>
                       <ChevronRight size={13} color="var(--muted)" />
                       <span>{nombreProducto(eq.productoId)}</span>
-                      <span style={estilos.equipoCantidad}>x{eq.cantidad}</span>
+                      <span style={estilos.equipoCantidad}>
+                        x{eq.cantidad} {eq.fechaInstalacion ? `· instalado ${formatoFecha(eq.fechaInstalacion)}` : ""}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -518,6 +646,72 @@ function VistaInstalaciones({ clientes, productos, onNuevoCliente, onEditarClien
   );
 }
 
+function VistaCotizaciones({ cotizaciones, onNueva, onVer, onEditar, onEliminar, onCambiarEstado }) {
+  const colorEstado = { pendiente: "var(--ambar)", aceptada: "var(--verde)", rechazada: "var(--rojo)" };
+  const etiquetaEstado = { pendiente: "Pendiente", aceptada: "Aceptada", rechazada: "Rechazada" };
+
+  return (
+    <div>
+      <div style={estilos.toolbar}>
+        <div style={{ flex: 1 }}>
+          <div style={estilos.tituloSeccion}>Cotizaciones</div>
+          <div style={estilos.subtituloSeccion}>Presupuestos armados para clientes</div>
+        </div>
+        <button onClick={onNueva} style={estilos.btnPrimario}>
+          <Plus size={15} /> Nueva cotización
+        </button>
+      </div>
+
+      {cotizaciones.length === 0 ? (
+        <EstadoVacio mensaje="Todavía no armaste ninguna cotización." />
+      ) : (
+        <div style={estilos.listaClientes}>
+          {cotizaciones.map((c) => (
+            <div key={c.id} style={estilos.tarjetaCliente}>
+              <div style={estilos.clienteHeader}>
+                <div>
+                  <div style={estilos.clienteNombre}>{c.cliente_nombre}</div>
+                  <div style={estilos.clienteDomicilio}>
+                    {c.items.length} producto{c.items.length !== 1 ? "s" : ""} · {formatoFecha(c.creado_en)}
+                  </div>
+                  <div style={{ ...estilos.tarjetaPrecio, marginTop: 6 }}>{formatoMoneda(c.total)}</div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                  <span style={{ ...estilos.badgeEstado, color: colorEstado[c.estado], borderColor: colorEstado[c.estado] }}>
+                    {etiquetaEstado[c.estado]}
+                  </span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => onVer(c)} style={estilos.btnSecundarioChico}>
+                      <FileText size={13} /> Ver / PDF
+                    </button>
+                    <button onClick={() => onEditar(c)} style={estilos.iconBtn} aria-label="Editar cotización">
+                      <Edit2 size={14} />
+                    </button>
+                    <button onClick={() => onEliminar(c)} style={estilos.iconBtn} aria-label="Eliminar cotización">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {c.estado === "pendiente" && (
+                <div style={estilos.equiposLista}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => onCambiarEstado(c, "aceptada")} style={{ ...estilos.btnSecundarioChico, color: "var(--verde)" }}>
+                      Marcar como aceptada
+                    </button>
+                    <button onClick={() => onCambiarEstado(c, "rechazada")} style={{ ...estilos.btnSecundarioChico, color: "var(--rojo)" }}>
+                      Marcar como rechazada
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 function BarraAlertas({ productos }) {
   return (
     <div style={estilos.barraAlertas}>
@@ -765,6 +959,302 @@ function ModalAsignarEquipo({ cliente, productos, onAsignar, onCerrar }) {
   );
 }
 
+function ModalCotizacion({ cotizacion, productos, clientes, onGuardar, onCerrar }) {
+  const [clienteNombre, setClienteNombre] = useState(cotizacion?.cliente_nombre || "");
+  const [clienteTelefono, setClienteTelefono] = useState(cotizacion?.cliente_telefono || "");
+  const [clienteId, setClienteId] = useState(cotizacion?.cliente_id || "");
+  const [items, setItems] = useState(
+    cotizacion?.items?.length
+      ? cotizacion.items
+      : []
+  );
+  const [manoDeObra, setManoDeObra] = useState(cotizacion?.mano_de_obra ?? "");
+  const [notas, setNotas] = useState(cotizacion?.notas || "");
+  const [productoNuevo, setProductoNuevo] = useState(productos[0]?.id || "");
+  const [cantidadNueva, setCantidadNueva] = useState(1);
+
+  function elegirCliente(id) {
+    setClienteId(id);
+    const c = clientes.find((cl) => cl.id === id);
+    if (c) {
+      setClienteNombre(c.nombre);
+      setClienteTelefono(c.telefono || "");
+    }
+  }
+
+  function agregarItem() {
+    const producto = productos.find((p) => p.id === productoNuevo);
+    if (!producto) return;
+    const existente = items.find((it) => it.productoId === producto.id);
+    if (existente) {
+      setItems(items.map((it) => (it.productoId === producto.id ? { ...it, cantidad: it.cantidad + Number(cantidadNueva) } : it)));
+    } else {
+      setItems([
+        ...items,
+        { productoId: producto.id, nombre: producto.nombre, precio: producto.precio, cantidad: Number(cantidadNueva) },
+      ]);
+    }
+    setCantidadNueva(1);
+  }
+
+  function quitarItem(productoId) {
+    setItems(items.filter((it) => it.productoId !== productoId));
+  }
+
+  function cambiarCantidadItem(productoId, delta) {
+    setItems(
+      items
+        .map((it) => (it.productoId === productoId ? { ...it, cantidad: Math.max(1, it.cantidad + delta) } : it))
+        .filter((it) => it.cantidad > 0)
+    );
+  }
+
+  const totalProductos = items.reduce((acc, it) => acc + it.precio * it.cantidad, 0);
+  const total = totalProductos + (Number(manoDeObra) || 0);
+
+  function enviar() {
+    if (!clienteNombre.trim() || items.length === 0) return;
+    onGuardar({
+      id: cotizacion?.id,
+      clienteId: clienteId || null,
+      clienteNombre,
+      clienteTelefono,
+      items,
+      manoDeObra: Number(manoDeObra) || 0,
+      estado: cotizacion?.estado,
+      notas,
+    });
+  }
+
+  return (
+    <ModalBase titulo={cotizacion ? "Editar cotización" : "Nueva cotización"} onCerrar={onCerrar} ancho={560}>
+      <div style={estilos.formGrid}>
+        {clientes.length > 0 && (
+          <Campo label="Cliente existente (opcional)" full>
+            <select
+              value={clienteId}
+              onChange={(e) => elegirCliente(e.target.value)}
+              style={estilos.select}
+            >
+              <option value="">— Escribir datos manualmente —</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                </option>
+              ))}
+            </select>
+          </Campo>
+        )}
+
+        <Campo label="Nombre del cliente">
+          <input value={clienteNombre} onChange={(e) => setClienteNombre(e.target.value)} style={estilos.input} placeholder="Ej: Farmacia Don Bosco" />
+        </Campo>
+
+        <Campo label="Teléfono / WhatsApp">
+          <input value={clienteTelefono} onChange={(e) => setClienteTelefono(e.target.value)} style={estilos.input} placeholder="Ej: 4621234567" />
+        </Campo>
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <label style={estilos.label}>Productos de la cotización</label>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <select value={productoNuevo} onChange={(e) => setProductoNuevo(e.target.value)} style={{ ...estilos.select, flex: 1 }}>
+            {productos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nombre} ({formatoMoneda(p.precio)})
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min="1"
+            value={cantidadNueva}
+            onChange={(e) => setCantidadNueva(e.target.value)}
+            style={{ ...estilos.input, width: 70 }}
+          />
+          <button type="button" onClick={agregarItem} style={estilos.btnSecundarioChico}>
+            <Plus size={14} /> Agregar
+          </button>
+        </div>
+
+        {items.length > 0 && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+            {items.map((it) => (
+              <div key={it.productoId} style={estilos.filaItemCotizacion}>
+                <span style={{ flex: 1, fontSize: 13 }}>{it.nombre}</span>
+                <button type="button" onClick={() => cambiarCantidadItem(it.productoId, -1)} style={estilos.iconBtn}>
+                  <Minus size={12} />
+                </button>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, minWidth: 24, textAlign: "center" }}>{it.cantidad}</span>
+                <button type="button" onClick={() => cambiarCantidadItem(it.productoId, 1)} style={estilos.iconBtn}>
+                  <Plus size={12} />
+                </button>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, minWidth: 90, textAlign: "right" }}>
+                  {formatoMoneda(it.precio * it.cantidad)}
+                </span>
+                <button type="button" onClick={() => quitarItem(it.productoId)} style={estilos.iconBtn}>
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={estilos.formGrid}>
+        <Campo label="Mano de obra / instalación (MXN)" full>
+          <input type="number" value={manoDeObra} onChange={(e) => setManoDeObra(e.target.value)} style={estilos.input} placeholder="0" />
+        </Campo>
+        <Campo label="Notas (opcional)" full>
+          <input value={notas} onChange={(e) => setNotas(e.target.value)} style={estilos.input} placeholder="Ej: válida por 15 días, incluye garantía de 1 año" />
+        </Campo>
+      </div>
+
+      <div style={estilos.resumenTotal}>
+        <span>Total cotización</span>
+        <span style={estilos.resumenTotalValor}>{formatoMoneda(total)}</span>
+      </div>
+
+      <div style={estilos.modalFooter}>
+        <button onClick={onCerrar} style={estilos.btnSecundario}>
+          Cancelar
+        </button>
+        <button onClick={enviar} style={estilos.btnPrimario} disabled={!clienteNombre.trim() || items.length === 0}>
+          Guardar cotización
+        </button>
+      </div>
+    </ModalBase>
+  );
+}
+
+function ModalVerCotizacion({ cotizacion, onCerrar }) {
+  function generarPDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let y = 20;
+
+    // Logo (proporción real ~500x254)
+    const logoAncho = 45;
+    const logoAlto = logoAncho * (254 / 500);
+    doc.addImage(LOGO_FBI, "PNG", 14, 10, logoAncho, logoAlto);
+    y = 10 + logoAlto + 8;
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    doc.text("Cotización de equipo de seguridad", 14, y);
+    y += 12;
+
+    doc.setFontSize(11);
+    doc.setFont(undefined, "bold");
+    doc.text(`Cliente: ${cotizacion.cliente_nombre}`, 14, y);
+    y += 6;
+    doc.setFont(undefined, "normal");
+    if (cotizacion.cliente_telefono) {
+      doc.text(`Teléfono: ${cotizacion.cliente_telefono}`, 14, y);
+      y += 6;
+    }
+    doc.text(`Fecha: ${formatoFecha(cotizacion.creado_en)}`, 14, y);
+    y += 12;
+
+    doc.setFont(undefined, "bold");
+    doc.text("Producto", 14, y);
+    doc.text("Cant.", 120, y);
+    doc.text("Precio unit.", 145, y);
+    doc.text("Subtotal", 178, y);
+    y += 4;
+    doc.line(14, y, 196, y);
+    y += 6;
+    doc.setFont(undefined, "normal");
+
+    cotizacion.items.forEach((it) => {
+      doc.text(it.nombre.slice(0, 45), 14, y);
+      doc.text(String(it.cantidad), 122, y);
+      doc.text(formatoMoneda(it.precio), 145, y);
+      doc.text(formatoMoneda(it.precio * it.cantidad), 178, y);
+      y += 7;
+    });
+
+    y += 2;
+    doc.line(14, y, 196, y);
+    y += 8;
+
+    if (cotizacion.mano_de_obra > 0) {
+      doc.text("Mano de obra / instalación", 130, y);
+      doc.text(formatoMoneda(cotizacion.mano_de_obra), 178, y);
+      y += 8;
+    }
+
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(13);
+    doc.text("Total", 130, y);
+    doc.text(formatoMoneda(cotizacion.total), 178, y);
+    y += 14;
+
+    if (cotizacion.notas) {
+      doc.setFontSize(10);
+      doc.setFont(undefined, "italic");
+      doc.text(`Notas: ${cotizacion.notas}`, 14, y, { maxWidth: 182 });
+    }
+
+    doc.save(`cotizacion-${cotizacion.cliente_nombre.replace(/\s+/g, "-").toLowerCase()}.pdf`);
+  }
+
+  function enviarWhatsApp() {
+    const telefono = (cotizacion.cliente_telefono || "").replace(/\D/g, "");
+    const lista = cotizacion.items.map((it) => `• ${it.nombre} x${it.cantidad} — ${formatoMoneda(it.precio * it.cantidad)}`).join("\n");
+    const mensaje =
+      `Hola ${cotizacion.cliente_nombre}, te comparto la cotización de FBI Central de Alarmas:\n\n` +
+      lista +
+      (cotizacion.mano_de_obra > 0 ? `\n\nMano de obra / instalación: ${formatoMoneda(cotizacion.mano_de_obra)}` : "") +
+      `\n\nTotal: ${formatoMoneda(cotizacion.total)}` +
+      (cotizacion.notas ? `\n\n${cotizacion.notas}` : "");
+    const url = telefono
+      ? `https://wa.me/${telefono}?text=${encodeURIComponent(mensaje)}`
+      : `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, "_blank");
+  }
+
+  return (
+    <ModalBase titulo={`Cotización · ${cotizacion.cliente_nombre}`} onCerrar={onCerrar} ancho={520}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+        {cotizacion.items.map((it, i) => (
+          <div key={i} style={estilos.filaItemCotizacion}>
+            <span style={{ flex: 1, fontSize: 13 }}>{it.nombre}</span>
+            <span style={{ fontSize: 12.5, color: "var(--texto-sec)" }}>x{it.cantidad}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, minWidth: 90, textAlign: "right" }}>
+              {formatoMoneda(it.precio * it.cantidad)}
+            </span>
+          </div>
+        ))}
+        {cotizacion.mano_de_obra > 0 && (
+          <div style={estilos.filaItemCotizacion}>
+            <span style={{ flex: 1, fontSize: 13, color: "var(--texto-sec)" }}>Mano de obra / instalación</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, minWidth: 90, textAlign: "right" }}>
+              {formatoMoneda(cotizacion.mano_de_obra)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div style={estilos.resumenTotal}>
+        <span>Total cotización</span>
+        <span style={estilos.resumenTotalValor}>{formatoMoneda(cotizacion.total)}</span>
+      </div>
+
+      {cotizacion.notas && <div style={estilos.notasCotizacion}>{cotizacion.notas}</div>}
+
+      <div style={estilos.modalFooter}>
+        <button onClick={enviarWhatsApp} style={estilos.btnSecundario}>
+          <MessageCircle size={15} /> Enviar por WhatsApp
+        </button>
+        <button onClick={generarPDF} style={estilos.btnPrimario}>
+          <Download size={15} /> Descargar PDF
+        </button>
+      </div>
+    </ModalBase>
+  );
+}
+
 function ModalConfirmar({ titulo, mensaje, onConfirmar, onCancelar }) {
   return (
     <ModalBase titulo={titulo} onCerrar={onCancelar} ancho={400}>
@@ -818,6 +1308,7 @@ const estilos = {
     gap: 16,
   },
   marca: { display: "flex", alignItems: "center", gap: 12 },
+  logoEncabezado: { height: 38, width: "auto", objectFit: "contain" },
   iconoMarca: {
     width: 36,
     height: 36,
@@ -933,4 +1424,48 @@ const estilos = {
   modalFooter: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, paddingTop: 16, borderTop: "1px solid var(--borde)" },
   mensajeConfirmar: { fontSize: 13.5, color: "var(--texto-sec)", lineHeight: 1.6 },
   avisoError: { fontSize: 12.5, color: "var(--rojo)", marginTop: 10 },
+  badgeEstado: {
+    fontSize: 11,
+    fontWeight: 600,
+    padding: "3px 9px",
+    borderRadius: 20,
+    border: "1px solid",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  filaItemCotizacion: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    background: "var(--superficie-alta)",
+    border: "1px solid var(--borde)",
+    borderRadius: 8,
+    padding: "8px 10px",
+  },
+  resumenTotal: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    background: "var(--superficie-alta)",
+    border: "1px solid var(--ambar)",
+    borderRadius: 10,
+    padding: "12px 16px",
+    marginTop: 16,
+    fontSize: 13.5,
+    fontWeight: 600,
+  },
+  resumenTotalValor: { fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "var(--ambar)" },
+  notasCotizacion: { fontSize: 12.5, color: "var(--texto-sec)", marginTop: 14, fontStyle: "italic" },
+  avisoMantenimiento: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    background: "rgba(217,119,6,0.08)",
+    border: "1px solid var(--ambar)",
+    borderRadius: 10,
+    padding: "12px 16px",
+    marginBottom: 20,
+  },
+  avisoMantenimientoTitulo: { fontSize: 13, fontWeight: 600, color: "var(--texto)" },
+  avisoMantenimientoTexto: { fontSize: 12.5, color: "var(--texto-sec)", marginTop: 3 },
 };
