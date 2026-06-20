@@ -265,7 +265,7 @@ export default function Cobranza({ sesion, clientes, onClientesActualizados }) {
       {confirmarBorrado && (
         <ModalConfirmar
           titulo="Eliminar cargo"
-          mensaje="¿Seguro que querés eliminar este cargo? Se va a borrar también el historial de pagos asociado. Esta acción no se puede deshacer."
+          mensaje="¿Seguro que quieres eliminar este cargo? Se va a borrar también el historial de pagos asociado. Esta acción no se puede deshacer."
           onConfirmar={() => eliminarCargo(confirmarBorrado.cargo, confirmarBorrado.esMonitoreo)}
           onCancelar={() => setConfirmarBorrado(null)}
         />
