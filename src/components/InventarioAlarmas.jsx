@@ -205,23 +205,39 @@ export default function InventarioAlarmas({ sesion }) {
     cargarTodo();
   }
 
-  async function asignarEquipo(clienteId, productoId, cantidad) {
+  async function asignarEquipo(clienteId, productoId, cantidad, fechaInstalacion, esHistorica) {
     const producto = productos.find((p) => p.id === productoId);
-    if (!producto || cantidad > producto.stock) {
+    if (!producto) {
+      setError("No se encontró el producto.");
+      return;
+    }
+    if (!esHistorica && cantidad > producto.stock) {
       setError("No hay stock suficiente para asignar esa cantidad.");
       return;
     }
     const cliente = clientes.find((c) => c.id === clienteId);
 
-    const { error: e1 } = await supabase.from("equipos_instalados").insert({ cliente_id: clienteId, producto_id: productoId, cantidad });
-    const { error: e2 } = await supabase.from("productos").update({ stock: producto.stock - cantidad }).eq("id", productoId);
-    const { error: e3 } = await supabase.from("movimientos").insert({
+    const { error: e1 } = await supabase.from("equipos_instalados").insert({
+      cliente_id: clienteId,
       producto_id: productoId,
-      tipo: "salida",
       cantidad,
-      motivo: `Instalación: ${cliente?.nombre || ""}`,
-      usuario_email: sesion.user.email,
+      fecha_instalacion: fechaInstalacion,
     });
+
+    let e2 = null;
+    let e3 = null;
+    if (!esHistorica) {
+      // Solo descuenta stock y registra movimiento si es una instalación nueva (sale del depósito hoy)
+      ({ error: e2 } = await supabase.from("productos").update({ stock: producto.stock - cantidad }).eq("id", productoId));
+      ({ error: e3 } = await supabase.from("movimientos").insert({
+        producto_id: productoId,
+        tipo: "salida",
+        cantidad,
+        motivo: `Instalación: ${cliente?.nombre || ""}`,
+        usuario_email: sesion.user.email,
+      }));
+    }
+
     if (e1 || e2 || e3) setError("No se pudo asignar el equipo.");
     setModalAsignar(null);
     cargarTodo();
@@ -1456,6 +1472,15 @@ const estilos = {
   modalFooter: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, paddingTop: 16, borderTop: "1px solid var(--borde)" },
   mensajeConfirmar: { fontSize: 13.5, color: "var(--texto-sec)", lineHeight: 1.6 },
   avisoError: { fontSize: 12.5, color: "var(--rojo)", marginTop: 10 },
+  opcionHistorica: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 9,
+    fontSize: 12.5,
+    color: "var(--texto-sec)",
+    lineHeight: 1.5,
+    cursor: "pointer",
+  },
   badgeEstado: {
     fontSize: 11,
     fontWeight: 600,
