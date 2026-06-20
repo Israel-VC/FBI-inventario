@@ -202,6 +202,8 @@ export default function InventarioAlarmas({ sesion, perfil }) {
       numero_cliente: (cliente.numero_cliente || "").trim() || null,
       cuota_mensual: Number(cliente.cuota_mensual) || 0,
       estado: cliente.estado || "activo",
+      frecuencia_pago: cliente.frecuencia_pago || "mensual",
+      fecha_alta: cliente.fecha_alta || null,
     };
     if (cliente.id) {
       const { error } = await supabase.from("clientes").update(payload).eq("id", cliente.id);
@@ -930,7 +932,16 @@ function ModalMovimiento({ productos, onGuardar, onCerrar }) {
 
 function ModalCliente({ cliente, onGuardar, onCerrar }) {
   const [form, setForm] = useState(
-    cliente || { nombre: "", domicilio: "", telefono: "", numero_cliente: "", cuota_mensual: "", estado: "activo" }
+    cliente || {
+      nombre: "",
+      domicilio: "",
+      telefono: "",
+      numero_cliente: "",
+      cuota_mensual: "",
+      estado: "activo",
+      frecuencia_pago: "mensual",
+      fecha_alta: "",
+    }
   );
 
   function enviar() {
@@ -959,7 +970,7 @@ function ModalCliente({ cliente, onGuardar, onCerrar }) {
             maxLength={4}
           />
         </Campo>
-        <Campo label="Cuota mensual de monitoreo (MXN)">
+        <Campo label="Cuota de monitoreo (MXN)">
           <input
             type="number"
             value={form.cuota_mensual || ""}
@@ -968,6 +979,27 @@ function ModalCliente({ cliente, onGuardar, onCerrar }) {
             placeholder="0"
           />
         </Campo>
+        <Campo label="Frecuencia de pago">
+          <select
+            value={form.frecuencia_pago || "mensual"}
+            onChange={(e) => setForm((f) => ({ ...f, frecuencia_pago: e.target.value }))}
+            style={estilos.select}
+          >
+            <option value="mensual">Mensual</option>
+            <option value="semestral">Semestral</option>
+            <option value="anual">Anual</option>
+          </select>
+        </Campo>
+        {form.frecuencia_pago !== "mensual" && (
+          <Campo label="Fecha de alta (define el mes de cobro)">
+            <input
+              type="date"
+              value={form.fecha_alta || ""}
+              onChange={(e) => setForm((f) => ({ ...f, fecha_alta: e.target.value }))}
+              style={estilos.input}
+            />
+          </Campo>
+        )}
         <Campo label="Estado">
           <select value={form.estado || "activo"} onChange={(e) => setForm((f) => ({ ...f, estado: e.target.value }))} style={estilos.select}>
             <option value="activo">Activo</option>
