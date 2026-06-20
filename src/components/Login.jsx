@@ -61,7 +61,7 @@ export default function Login() {
           </button>
         </form>
 
-        <div style={estilos.pie}>¿No tenés cuenta? Pedile al administrador que te cree un usuario.</div>
+        <div style={estilos.pie}>¿No tienes cuenta? Pídele al administrador que te cree un usuario.</div>
       </div>
     </div>
   );
