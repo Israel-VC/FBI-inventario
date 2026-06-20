@@ -19,7 +19,9 @@ import {
   MessageCircle,
   BatteryWarning,
   Minus,
+  Wallet,
 } from "lucide-react";
+import Cobranza from "./Cobranza";
 
 const CATEGORIAS = ["Paneles", "Sensores", "Sirenas", "Cámaras", "Teclados", "Baterías", "Cableado", "Accesorios"];
 
@@ -333,6 +335,8 @@ export default function InventarioAlarmas({ sesion }) {
             onCambiarEstado={cambiarEstadoCotizacion}
           />
         )}
+
+        {vista === "cobranza" && <Cobranza sesion={sesion} clientes={clientes} onClientesActualizados={cargarTodo} />}
       </div>
 
       {productosStockBajo.length > 0 && vista === "inventario" && <BarraAlertas productos={productosStockBajo} />}
@@ -399,6 +403,7 @@ function Encabezado({ vista, setVista, alertas, sesion, onCerrarSesion }) {
     { id: "movimientos", label: "Movimientos", icon: ArrowUpDown },
     { id: "instalaciones", label: "Instalaciones", icon: Home },
     { id: "cotizaciones", label: "Cotizaciones", icon: FileText },
+    { id: "cobranza", label: "Cobranza", icon: Wallet },
   ];
   return (
     <div style={estilos.encabezado}>
@@ -921,11 +926,13 @@ function ModalCliente({ cliente, onGuardar, onCerrar }) {
 function ModalAsignarEquipo({ cliente, productos, onAsignar, onCerrar }) {
   const [productoId, setProductoId] = useState(productos[0]?.id || "");
   const [cantidad, setCantidad] = useState(1);
+  const [esHistorica, setEsHistorica] = useState(false);
+  const [fechaInstalacion, setFechaInstalacion] = useState(new Date().toISOString().slice(0, 10));
   const productoSeleccionado = productos.find((p) => p.id === productoId);
 
   function enviar() {
     if (!productoId || cantidad <= 0) return;
-    onAsignar(cliente.id, productoId, Number(cantidad));
+    onAsignar(cliente.id, productoId, Number(cantidad), fechaInstalacion, esHistorica);
   }
 
   return (
@@ -941,18 +948,43 @@ function ModalAsignarEquipo({ cliente, productos, onAsignar, onCerrar }) {
           </select>
         </Campo>
         <Campo label="Cantidad a instalar">
-          <input type="number" min="1" max={productoSeleccionado?.stock || 1} value={cantidad} onChange={(e) => setCantidad(e.target.value)} style={estilos.input} />
+          <input
+            type="number"
+            min="1"
+            max={esHistorica ? undefined : productoSeleccionado?.stock || 1}
+            value={cantidad}
+            onChange={(e) => setCantidad(e.target.value)}
+            style={estilos.input}
+          />
         </Campo>
+
+        <Campo label="Fecha de instalación" full>
+          <input type="date" value={fechaInstalacion} onChange={(e) => setFechaInstalacion(e.target.value)} style={estilos.input} max={new Date().toISOString().slice(0, 10)} />
+        </Campo>
+
+        <div style={estilos.campoFull}>
+          <label style={estilos.opcionHistorica}>
+            <input type="checkbox" checked={esHistorica} onChange={(e) => setEsHistorica(e.target.checked)} />
+            <span>
+              Es un cliente con equipo ya instalado antes (no descuenta stock ni registra movimiento, solo guarda el registro y la fecha para las alertas
+              de mantenimiento)
+            </span>
+          </label>
+        </div>
       </div>
-      {productoSeleccionado && Number(cantidad) > productoSeleccionado.stock && (
+      {!esHistorica && productoSeleccionado && Number(cantidad) > productoSeleccionado.stock && (
         <div style={estilos.avisoError}>No hay stock suficiente. Disponible: {productoSeleccionado.stock}</div>
       )}
       <div style={estilos.modalFooter}>
         <button onClick={onCerrar} style={estilos.btnSecundario}>
           Cancelar
         </button>
-        <button onClick={enviar} style={estilos.btnPrimario} disabled={productoSeleccionado && Number(cantidad) > productoSeleccionado.stock}>
-          Asignar e instalar
+        <button
+          onClick={enviar}
+          style={estilos.btnPrimario}
+          disabled={!esHistorica && productoSeleccionado && Number(cantidad) > productoSeleccionado.stock}
+        >
+          {esHistorica ? "Guardar instalación existente" : "Asignar e instalar"}
         </button>
       </div>
     </ModalBase>
