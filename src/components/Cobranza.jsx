@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { Plus, X, Trash2, Edit2, Search, Wallet, RefreshCw, CheckCircle2, Clock, AlertCircle, Printer } from "lucide-react";
+import { Plus, X, Trash2, Edit2, Search, Wallet, RefreshCw, CheckCircle2, Clock, AlertCircle, Printer, FileBarChart } from "lucide-react";
 import { LOGO_FBI } from "../lib/logo";
 
 function formatoMoneda(n) {
@@ -24,6 +24,21 @@ function periodoActual() {
   return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function generarUltimosMeses(cantidad) {
+  const meses = [];
+  const hoy = new Date();
+  for (let i = 0; i < cantidad; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return meses;
+}
+
+function fechaEnPeriodoCobranza(fechaISO, periodo) {
+  if (!fechaISO) return false;
+  return fechaISO.slice(0, 7) === periodo;
+}
+
 function normalizarNumeroCliente(valor) {
   const limpio = (valor || "").trim();
   if (!limpio) return null;
@@ -39,6 +54,7 @@ export default function Cobranza({ sesion, clientes, onClientesActualizados }) {
   const [error, setError] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [generandoCargos, setGenerandoCargos] = useState(false);
+  const [periodoReporte, setPeriodoReporte] = useState(periodoActual());
 
   const [modalCliente, setModalCliente] = useState(null);
   const [modalServicio, setModalServicio] = useState(null);
@@ -183,6 +199,54 @@ export default function Cobranza({ sesion, clientes, onClientesActualizados }) {
     cargarDatos();
   }
 
+  function generarReporteCobranza() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let y = 20;
+
+    const logoAncho = 40;
+    const logoAlto = logoAncho * (254 / 500);
+    doc.addImage(LOGO_FBI, "PNG", 14, 10, logoAncho, logoAlto);
+    y = 10 + logoAlto + 10;
+
+    doc.setFontSize(14);
+    doc.setFont(undefined, "bold");
+    doc.text(`Reporte de Cobranza — ${nombrePeriodo(periodoReporte)}`, 14, y);
+    y += 12;
+
+    const monitoreoDelMes = cargosMonitoreo.filter((c) => c.periodo === periodoReporte);
+    const cobradoMonitoreo = monitoreoDelMes.reduce((acc, c) => acc + totalPagado(c, true), 0);
+    const pendienteMonitoreo = monitoreoDelMes.reduce((acc, c) => acc + saldoPendiente(c, true), 0);
+
+    const pagosServiciosDelMes = pagos.filter((p) => p.cargo_servicio_id && fechaEnPeriodoCobranza(p.fecha, periodoReporte));
+    const cobradoServicios = pagosServiciosDelMes.reduce((acc, p) => acc + Number(p.monto), 0);
+    const pendienteServicios = cargosServicio.filter((c) => c.estado !== "pagado").reduce((acc, c) => acc + saldoPendiente(c, false), 0);
+
+    const activos = clientes.filter((c) => c.estado === "activo").length;
+    const suspendidos = clientes.filter((c) => c.estado === "suspendido").length;
+    const bajas = clientes.filter((c) => c.estado === "baja").length;
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    const resumen = [
+      `Clientes activos: ${activos}  ·  Suspendidos: ${suspendidos}  ·  De baja: ${bajas}`,
+      "",
+      "Monitoreo mensual:",
+      `  Cobrado en el período: ${formatoMoneda(cobradoMonitoreo)}`,
+      `  Pendiente del período: ${formatoMoneda(pendienteMonitoreo)}`,
+      "",
+      "Cargos por servicio:",
+      `  Cobrado en el mes (pagos registrados): ${formatoMoneda(cobradoServicios)}`,
+      `  Total pendiente acumulado (todos los meses): ${formatoMoneda(pendienteServicios)}`,
+    ];
+    resumen.forEach((linea) => {
+      doc.text(linea, 14, y);
+      y += 7;
+    });
+
+    doc.save(`reporte-cobranza-${periodoReporte}.pdf`);
+  }
+
   if (cargando) {
     return <div style={{ padding: 40, textAlign: "center", color: "var(--texto-sec)" }}>Cargando cobranza...</div>;
   }
@@ -197,6 +261,19 @@ export default function Cobranza({ sesion, clientes, onClientesActualizados }) {
           </button>
         </div>
       )}
+
+      <div style={estilos.toolbarReporteCobranza}>
+        <select value={periodoReporte} onChange={(e) => setPeriodoReporte(e.target.value)} style={estilos.select}>
+          {generarUltimosMeses(12).map((m) => (
+            <option key={m} value={m}>
+              {nombrePeriodo(m)}
+            </option>
+          ))}
+        </select>
+        <button onClick={generarReporteCobranza} style={estilos.btnSecundario}>
+          <FileBarChart size={15} /> Reporte mensual de cobranza
+        </button>
+      </div>
 
       <div style={estilos.subtabs}>
         <button onClick={() => setSubvista("monitoreo")} style={{ ...estilos.subtabBtn, ...(subvista === "monitoreo" ? estilos.subtabBtnActivo : {}) }}>
@@ -797,6 +874,7 @@ const estilos = {
     fontSize: 13,
     marginBottom: 16,
   },
+  toolbarReporteCobranza: { display: "flex", gap: 10, alignItems: "center", marginBottom: 16 },
   subtabs: { display: "flex", gap: 4, background: "var(--superficie)", padding: 4, borderRadius: 10, marginBottom: 20, width: "fit-content", flexWrap: "wrap" },
   subtabBtn: { padding: "8px 14px", borderRadius: 8, border: "none", background: "transparent", color: "var(--texto-sec)", fontSize: 13, fontWeight: 500, cursor: "pointer" },
   subtabBtnActivo: { background: "var(--superficie-alta)", color: "var(--texto)" },
