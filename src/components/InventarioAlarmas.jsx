@@ -20,6 +20,7 @@ import {
   BatteryWarning,
   Minus,
   Wallet,
+  FileBarChart,
 } from "lucide-react";
 import Cobranza from "./Cobranza";
 
@@ -50,6 +51,51 @@ function etiquetaEstadoCliente(estado) {
   if (estado === "suspendido") return "Suspendido temporalmente";
   if (estado === "baja") return "De baja";
   return "Activo";
+}
+
+const NOMBRES_MES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+function periodoActualYYYYMM() {
+  const hoy = new Date();
+  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function nombrePeriodoYYYYMM(periodo) {
+  const [anio, mes] = periodo.split("-");
+  return `${NOMBRES_MES[Number(mes) - 1]} ${anio}`;
+}
+
+function generarUltimosMeses(cantidad) {
+  const meses = [];
+  const hoy = new Date();
+  for (let i = 0; i < cantidad; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return meses;
+}
+
+function fechaEnPeriodo(fechaISO, periodo) {
+  if (!fechaISO) return false;
+  return fechaISO.slice(0, 7) === periodo;
+}
+
+function SelectorReporte({ periodo, setPeriodo, onGenerar, deshabilitado }) {
+  const meses = generarUltimosMeses(12);
+  return (
+    <div style={estilos.selectorReporte}>
+      <select value={periodo} onChange={(e) => setPeriodo(e.target.value)} style={estilos.select}>
+        {meses.map((m) => (
+          <option key={m} value={m}>
+            {nombrePeriodoYYYYMM(m)}
+          </option>
+        ))}
+      </select>
+      <button onClick={onGenerar} disabled={deshabilitado} style={estilos.btnSecundario}>
+        <FileBarChart size={15} /> Reporte mensual
+      </button>
+    </div>
+  );
 }
 
 export default function InventarioAlarmas({ sesion, perfil }) {
@@ -340,6 +386,7 @@ export default function InventarioAlarmas({ sesion, perfil }) {
           <VistaInventario
             productos={productosFiltrados}
             todos={productos}
+            movimientos={movimientos}
             busqueda={busqueda}
             setBusqueda={setBusqueda}
             filtroCategoria={filtroCategoria}
@@ -484,8 +531,65 @@ function Encabezado({ vista, setVista, alertas, nombreUsuario, onCerrarSesion })
   );
 }
 
-function VistaInventario({ productos, todos, busqueda, setBusqueda, filtroCategoria, setFiltroCategoria, onNuevo, onEditar, onEliminar, onMovimiento }) {
+function VistaInventario({ productos, todos, movimientos, busqueda, setBusqueda, filtroCategoria, setFiltroCategoria, onNuevo, onEditar, onEliminar, onMovimiento }) {
+  const [periodoReporte, setPeriodoReporte] = useState(periodoActualYYYYMM());
   const valorTotal = todos.reduce((acc, p) => acc + p.precio * p.stock, 0);
+
+  function generarReporte() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let y = 20;
+
+    const logoAncho = 40;
+    const logoAlto = logoAncho * (254 / 500);
+    doc.addImage(LOGO_FBI, "PNG", 14, 10, logoAncho, logoAlto);
+    y = 10 + logoAlto + 10;
+
+    doc.setFontSize(14);
+    doc.setFont(undefined, "bold");
+    doc.text(`Reporte de Inventario — ${nombrePeriodoYYYYMM(periodoReporte)}`, 14, y);
+    y += 12;
+
+    const movimientosDelMes = movimientos.filter((m) => fechaEnPeriodo(m.creado_en, periodoReporte));
+    const entradas = movimientosDelMes.filter((m) => m.tipo === "entrada");
+    const salidas = movimientosDelMes.filter((m) => m.tipo === "salida");
+    const unidadesEntrada = entradas.reduce((a, m) => a + m.cantidad, 0);
+    const unidadesSalida = salidas.reduce((a, m) => a + m.cantidad, 0);
+    const stockBajo = todos.filter((p) => p.stock <= p.minimo);
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    const resumen = [
+      `Productos distintos en catálogo: ${todos.length}`,
+      `Unidades totales en stock (a la fecha): ${todos.reduce((a, p) => a + p.stock, 0)}`,
+      `Valor total de stock (a la fecha): ${formatoMoneda(valorTotal)}`,
+      `Movimientos de entrada en el mes: ${entradas.length} (${unidadesEntrada} unidades)`,
+      `Movimientos de salida en el mes: ${salidas.length} (${unidadesSalida} unidades)`,
+      `Productos con stock bajo o crítico (a la fecha): ${stockBajo.length}`,
+    ];
+    resumen.forEach((linea) => {
+      doc.text(linea, 14, y);
+      y += 7;
+    });
+
+    y += 6;
+    if (stockBajo.length > 0) {
+      doc.setFont(undefined, "bold");
+      doc.text("Productos con stock bajo o crítico:", 14, y);
+      y += 7;
+      doc.setFont(undefined, "normal");
+      stockBajo.forEach((p) => {
+        if (y > 275) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(`• ${p.nombre} (${p.marca} ${p.modelo}) — stock: ${p.stock}, mínimo: ${p.minimo}`, 14, y);
+        y += 7;
+      });
+    }
+
+    doc.save(`reporte-inventario-${periodoReporte}.pdf`);
+  }
 
   return (
     <div>
@@ -521,6 +625,10 @@ function VistaInventario({ productos, todos, busqueda, setBusqueda, filtroCatego
         <button onClick={onNuevo} style={estilos.btnPrimario}>
           <Plus size={15} /> Nuevo producto
         </button>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <SelectorReporte periodo={periodoReporte} setPeriodo={setPeriodoReporte} onGenerar={generarReporte} />
       </div>
 
       {productos.length === 0 ? (
@@ -626,10 +734,87 @@ function VistaMovimientos({ movimientos, productos, onNuevo, onEliminar }) {
 
 function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, onNuevoCliente, onEditarCliente, onAsignar }) {
   const [avisoMantenimientoVisible, setAvisoMantenimientoVisible] = useState(true);
+  const [periodoReporte, setPeriodoReporte] = useState(periodoActualYYYYMM());
 
   function nombreProducto(id) {
     return productos.find((p) => p.id === id)?.nombre || "Producto eliminado";
   }
+
+  function generarReporte() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let y = 20;
+
+    const logoAncho = 40;
+    const logoAlto = logoAncho * (254 / 500);
+    doc.addImage(LOGO_FBI, "PNG", 14, 10, logoAncho, logoAlto);
+    y = 10 + logoAlto + 10;
+
+    doc.setFontSize(14);
+    doc.setFont(undefined, "bold");
+    doc.text(`Reporte de Instalaciones — ${nombrePeriodoYYYYMM(periodoReporte)}`, 14, y);
+    y += 12;
+
+    const clientesNuevos = clientes.filter((c) => fechaEnPeriodo(c.creado_en, periodoReporte));
+    let equiposInstaladosDelMes = 0;
+    clientes.forEach((c) => {
+      c.equipos.forEach((eq) => {
+        if (fechaEnPeriodo(eq.fechaInstalacion, periodoReporte)) equiposInstaladosDelMes++;
+      });
+    });
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    const resumen = [
+      `Clientes totales (a la fecha): ${clientes.length}`,
+      `Clientes nuevos en el mes: ${clientesNuevos.length}`,
+      `Equipos instalados en el mes: ${equiposInstaladosDelMes}`,
+      `Equipos con 3+ años instalados (a la fecha, sugieren revisión): ${equiposParaMantenimiento.length}`,
+    ];
+    resumen.forEach((linea) => {
+      doc.text(linea, 14, y);
+      y += 7;
+    });
+
+    if (clientesNuevos.length > 0) {
+      y += 6;
+      doc.setFont(undefined, "bold");
+      doc.text("Clientes nuevos del mes:", 14, y);
+      y += 7;
+      doc.setFont(undefined, "normal");
+      clientesNuevos.forEach((c) => {
+        if (y > 275) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(`• ${c.numero_cliente ? c.numero_cliente + " — " : ""}${c.nombre} (${c.domicilio})`, 14, y);
+        y += 7;
+      });
+    }
+
+    if (equiposParaMantenimiento.length > 0) {
+      y += 6;
+      if (y > 260) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.setFont(undefined, "bold");
+      doc.text("Equipos que sugieren revisión de mantenimiento:", 14, y);
+      y += 7;
+      doc.setFont(undefined, "normal");
+      equiposParaMantenimiento.forEach((e) => {
+        if (y > 275) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(`• ${e.cliente.nombre} — ${e.producto?.nombre || "equipo"} (${e.anios} años instalado)`, 14, y);
+        y += 7;
+      });
+    }
+
+    doc.save(`reporte-instalaciones-${periodoReporte}.pdf`);
+  }
+
   return (
     <div>
       {equiposParaMantenimiento.length > 0 && avisoMantenimientoVisible && (
@@ -662,6 +847,10 @@ function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, onN
         <button onClick={onNuevoCliente} style={estilos.btnPrimario}>
           <Plus size={15} /> Nuevo cliente
         </button>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <SelectorReporte periodo={periodoReporte} setPeriodo={setPeriodoReporte} onGenerar={generarReporte} />
       </div>
 
       {clientes.length === 0 ? (
@@ -1666,4 +1855,5 @@ const estilos = {
     flexShrink: 0,
     marginLeft: 4,
   },
+  selectorReporte: { display: "flex", gap: 10, alignItems: "center" },
 };
