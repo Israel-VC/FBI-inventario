@@ -23,6 +23,7 @@ import {
   FileBarChart,
 } from "lucide-react";
 import Cobranza from "./Cobranza";
+import ReporteFinanciero from "./ReporteFinanciero";
 
 const CATEGORIAS = ["Paneles", "Sensores", "Sirenas", "Cámaras", "Teclados", "Baterías", "Cableado", "Accesorios"];
 
@@ -100,6 +101,7 @@ function SelectorReporte({ periodo, setPeriodo, onGenerar, deshabilitado }) {
 
 export default function InventarioAlarmas({ sesion, perfil }) {
   const nombreUsuario = perfil?.nombre || sesion.user.email;
+  const esAdmin = perfil?.rol === "admin";
   const [vista, setVista] = useState("inventario");
   const [productos, setProductos] = useState([]);
   const [clientes, setClientes] = useState([]);
@@ -202,6 +204,7 @@ export default function InventarioAlarmas({ sesion, perfil }) {
       marca: producto.marca,
       modelo: producto.modelo,
       precio: Number(producto.precio) || 0,
+      costo: Number(producto.costo) || 0,
       stock: Number(producto.stock) || 0,
       minimo: Number(producto.minimo) || 0,
       foto: producto.foto,
@@ -370,71 +373,77 @@ export default function InventarioAlarmas({ sesion, perfil }) {
 
   return (
     <div style={estilos.app}>
-      <Encabezado vista={vista} setVista={setVista} alertas={productosStockBajo.length} nombreUsuario={nombreUsuario} onCerrarSesion={cerrarSesion} />
+      <BarraLateral vista={vista} setVista={setVista} alertas={productosStockBajo.length} nombreUsuario={nombreUsuario} esAdmin={esAdmin} onCerrarSesion={cerrarSesion} />
 
-      {error && (
-        <div style={estilos.bannerError}>
-          {error}
-          <button onClick={() => setError("")} style={estilos.iconBtn} aria-label="Cerrar aviso">
-            <X size={14} />
-          </button>
+      <div style={estilos.areaContenido}>
+        {error && (
+          <div style={estilos.bannerError}>
+            {error}
+            <button onClick={() => setError("")} style={estilos.iconBtn} aria-label="Cerrar aviso">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <div style={estilos.contenido}>
+          {vista === "inventario" && (
+            <VistaInventario
+              productos={productosFiltrados}
+              todos={productos}
+              movimientos={movimientos}
+              busqueda={busqueda}
+              setBusqueda={setBusqueda}
+              filtroCategoria={filtroCategoria}
+              setFiltroCategoria={setFiltroCategoria}
+              esAdmin={esAdmin}
+              onNuevo={() => setModalProducto("nuevo")}
+              onEditar={(p) => setModalProducto(p)}
+              onEliminar={(p) => setConfirmarBorrado(p)}
+              onMovimiento={() => setModalMovimiento(true)}
+            />
+          )}
+
+          {vista === "movimientos" && (
+            <VistaMovimientos
+              movimientos={movimientos}
+              productos={productos}
+              onNuevo={() => setModalMovimiento(true)}
+              onEliminar={(m) => setConfirmarBorradoMovimiento(m)}
+            />
+          )}
+
+          {vista === "instalaciones" && (
+            <VistaInstalaciones
+              clientes={clientes}
+              productos={productos}
+              equiposParaMantenimiento={equiposParaMantenimiento}
+              esAdmin={esAdmin}
+              onNuevoCliente={() => setModalCliente("nuevo")}
+              onEditarCliente={(c) => setModalCliente(c)}
+              onAsignar={(c) => setModalAsignar(c)}
+            />
+          )}
+
+          {vista === "cotizaciones" && (
+            <VistaCotizaciones
+              cotizaciones={cotizaciones}
+              onNueva={() => setModalCotizacion("nueva")}
+              onVer={(c) => setVerCotizacion(c)}
+              onEditar={(c) => setModalCotizacion(c)}
+              onEliminar={(c) => setConfirmarBorradoCotizacion(c)}
+              onCambiarEstado={cambiarEstadoCotizacion}
+            />
+          )}
+
+          {vista === "cobranza" && <Cobranza sesion={sesion} clientes={clientes} esAdmin={esAdmin} onClientesActualizados={cargarTodo} />}
+
+          {vista === "finanzas" && esAdmin && <ReporteFinanciero productos={productos} clientes={clientes} />}
         </div>
-      )}
 
-      <div style={estilos.contenido}>
-        {vista === "inventario" && (
-          <VistaInventario
-            productos={productosFiltrados}
-            todos={productos}
-            movimientos={movimientos}
-            busqueda={busqueda}
-            setBusqueda={setBusqueda}
-            filtroCategoria={filtroCategoria}
-            setFiltroCategoria={setFiltroCategoria}
-            onNuevo={() => setModalProducto("nuevo")}
-            onEditar={(p) => setModalProducto(p)}
-            onEliminar={(p) => setConfirmarBorrado(p)}
-            onMovimiento={() => setModalMovimiento(true)}
-          />
+        {productosStockBajo.length > 0 && vista === "inventario" && alertaStockVisible && (
+          <BarraAlertas productos={productosStockBajo} onCerrar={() => setAlertaStockVisible(false)} />
         )}
-
-        {vista === "movimientos" && (
-          <VistaMovimientos
-            movimientos={movimientos}
-            productos={productos}
-            onNuevo={() => setModalMovimiento(true)}
-            onEliminar={(m) => setConfirmarBorradoMovimiento(m)}
-          />
-        )}
-
-        {vista === "instalaciones" && (
-          <VistaInstalaciones
-            clientes={clientes}
-            productos={productos}
-            equiposParaMantenimiento={equiposParaMantenimiento}
-            onNuevoCliente={() => setModalCliente("nuevo")}
-            onEditarCliente={(c) => setModalCliente(c)}
-            onAsignar={(c) => setModalAsignar(c)}
-          />
-        )}
-
-        {vista === "cotizaciones" && (
-          <VistaCotizaciones
-            cotizaciones={cotizaciones}
-            onNueva={() => setModalCotizacion("nueva")}
-            onVer={(c) => setVerCotizacion(c)}
-            onEditar={(c) => setModalCotizacion(c)}
-            onEliminar={(c) => setConfirmarBorradoCotizacion(c)}
-            onCambiarEstado={cambiarEstadoCotizacion}
-          />
-        )}
-
-        {vista === "cobranza" && <Cobranza sesion={sesion} clientes={clientes} onClientesActualizados={cargarTodo} />}
       </div>
-
-      {productosStockBajo.length > 0 && vista === "inventario" && alertaStockVisible && (
-        <BarraAlertas productos={productosStockBajo} onCerrar={() => setAlertaStockVisible(false)} />
-      )}
 
       {modalProducto && (
         <ModalProducto producto={modalProducto === "nuevo" ? null : modalProducto} onGuardar={guardarProducto} onCerrar={() => setModalProducto(null)} />
@@ -492,46 +501,50 @@ export default function InventarioAlarmas({ sesion, perfil }) {
   );
 }
 
-function Encabezado({ vista, setVista, alertas, nombreUsuario, onCerrarSesion }) {
+function BarraLateral({ vista, setVista, alertas, nombreUsuario, esAdmin, onCerrarSesion }) {
   const tabs = [
     { id: "inventario", label: "Inventario", icon: Package },
     { id: "movimientos", label: "Movimientos", icon: ArrowUpDown },
     { id: "instalaciones", label: "Instalaciones", icon: Home },
     { id: "cotizaciones", label: "Cotizaciones", icon: FileText },
     { id: "cobranza", label: "Cobranza", icon: Wallet },
+    ...(esAdmin ? [{ id: "finanzas", label: "Finanzas", icon: FileBarChart }] : []),
   ];
   return (
-    <div style={estilos.encabezado}>
+    <div style={estilos.barraLateral}>
       <div style={estilos.marca}>
         <div style={estilos.fondoLogo}>
           <img src={LOGO_FBI} alt="FBI Central de Alarmas" style={estilos.logoEncabezado} />
         </div>
-        <div>
+        <div style={estilos.marcaTextos}>
           <div style={estilos.marcaTitulo}>FBI Central de Alarmas</div>
-          <div style={estilos.marcaSub}>Inventario · {nombreUsuario}</div>
+          <div style={estilos.marcaSub}>{nombreUsuario}</div>
         </div>
       </div>
-      <div style={estilos.tabs}>
+
+      <div style={estilos.tabsLateral}>
         {tabs.map((t) => {
           const Icon = t.icon;
           const activo = vista === t.id;
           return (
-            <button key={t.id} onClick={() => setVista(t.id)} style={{ ...estilos.tabBtn, ...(activo ? estilos.tabBtnActivo : {}) }}>
-              <Icon size={15} strokeWidth={2} />
-              {t.label}
+            <button key={t.id} onClick={() => setVista(t.id)} style={{ ...estilos.tabBtnLateral, ...(activo ? estilos.tabBtnLateralActivo : {}) }}>
+              <Icon size={17} strokeWidth={2} />
+              <span style={{ flex: 1, textAlign: "left" }}>{t.label}</span>
               {t.id === "inventario" && alertas > 0 && <span style={estilos.badgeAlerta}>{alertas}</span>}
             </button>
           );
         })}
       </div>
-      <button onClick={onCerrarSesion} style={estilos.btnSalir} aria-label="Cerrar sesión">
+
+      <button onClick={onCerrarSesion} style={estilos.btnSalirLateral}>
         <LogOut size={15} />
+        <span>Cerrar sesión</span>
       </button>
     </div>
   );
 }
 
-function VistaInventario({ productos, todos, movimientos, busqueda, setBusqueda, filtroCategoria, setFiltroCategoria, onNuevo, onEditar, onEliminar, onMovimiento }) {
+function VistaInventario({ productos, todos, movimientos, busqueda, setBusqueda, filtroCategoria, setFiltroCategoria, esAdmin, onNuevo, onEditar, onEliminar, onMovimiento }) {
   const [periodoReporte, setPeriodoReporte] = useState(periodoActualYYYYMM());
   const valorTotal = todos.reduce((acc, p) => acc + p.precio * p.stock, 0);
 
@@ -627,9 +640,11 @@ function VistaInventario({ productos, todos, movimientos, busqueda, setBusqueda,
         </button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <SelectorReporte periodo={periodoReporte} setPeriodo={setPeriodoReporte} onGenerar={generarReporte} />
-      </div>
+      {esAdmin && (
+        <div style={{ marginBottom: 16 }}>
+          <SelectorReporte periodo={periodoReporte} setPeriodo={setPeriodoReporte} onGenerar={generarReporte} />
+        </div>
+      )}
 
       {productos.length === 0 ? (
         <EstadoVacio mensaje="No se encontró ningún producto con esos filtros." />
@@ -647,14 +662,11 @@ function VistaInventario({ productos, todos, movimientos, busqueda, setBusqueda,
 function TarjetaProducto({ producto, onEditar, onEliminar }) {
   const bajo = producto.stock <= producto.minimo;
   const critico = producto.stock === 0;
+  const colorEstado = critico ? "var(--rojo)" : bajo ? "var(--ambar)" : "var(--verde)";
   return (
-    <div style={estilos.tarjeta}>
+    <div style={{ ...estilos.tarjeta, borderTop: `3px solid ${colorEstado}` }}>
       <div style={estilos.tarjetaFoto}>
         {producto.foto ? <img src={producto.foto} alt={producto.nombre} style={estilos.imgProducto} /> : <Package size={28} color="var(--muted)" strokeWidth={1.5} />}
-        <div
-          style={{ ...estilos.puntoEstado, background: critico ? "var(--rojo)" : bajo ? "var(--ambar)" : "var(--verde)" }}
-          title={critico ? "Sin stock" : bajo ? "Stock bajo" : "Stock ok"}
-        />
       </div>
       <div style={estilos.tarjetaCuerpo}>
         <div style={estilos.tarjetaCategoria}>{producto.categoria}</div>
@@ -732,9 +744,19 @@ function VistaMovimientos({ movimientos, productos, onNuevo, onEliminar }) {
   );
 }
 
-function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, onNuevoCliente, onEditarCliente, onAsignar }) {
+function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, esAdmin, onNuevoCliente, onEditarCliente, onAsignar }) {
   const [avisoMantenimientoVisible, setAvisoMantenimientoVisible] = useState(true);
   const [periodoReporte, setPeriodoReporte] = useState(periodoActualYYYYMM());
+  const [busqueda, setBusqueda] = useState("");
+
+  const clientesFiltrados = clientes.filter((c) => {
+    const q = busqueda.toLowerCase();
+    return (
+      c.nombre.toLowerCase().includes(q) ||
+      (c.numero_cliente || "").includes(q) ||
+      (c.domicilio || "").toLowerCase().includes(q)
+    );
+  });
 
   function nombreProducto(id) {
     return productos.find((p) => p.id === id)?.nombre || "Producto eliminado";
@@ -840,24 +862,31 @@ function VistaInstalaciones({ clientes, productos, equiposParaMantenimiento, onN
       )}
 
       <div style={estilos.toolbar}>
-        <div style={{ flex: 1 }}>
-          <div style={estilos.tituloSeccion}>Instalaciones por cliente</div>
-          <div style={estilos.subtituloSeccion}>Qué equipo quedó instalado en cada domicilio</div>
+        <div style={estilos.buscador}>
+          <Search size={16} color="var(--muted)" />
+          <input
+            placeholder="Buscar por nombre, número de cliente o domicilio..."
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            style={estilos.inputBuscador}
+          />
         </div>
         <button onClick={onNuevoCliente} style={estilos.btnPrimario}>
           <Plus size={15} /> Nuevo cliente
         </button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <SelectorReporte periodo={periodoReporte} setPeriodo={setPeriodoReporte} onGenerar={generarReporte} />
-      </div>
+      {esAdmin && (
+        <div style={{ marginBottom: 16 }}>
+          <SelectorReporte periodo={periodoReporte} setPeriodo={setPeriodoReporte} onGenerar={generarReporte} />
+        </div>
+      )}
 
-      {clientes.length === 0 ? (
-        <EstadoVacio mensaje="Todavía no agregaste ningún cliente." />
+      {clientesFiltrados.length === 0 ? (
+        <EstadoVacio mensaje={busqueda ? "No se encontró ningún cliente con esa búsqueda." : "Todavía no agregaste ningún cliente."} />
       ) : (
         <div style={estilos.listaClientes}>
-          {clientes.map((c) => (
+          {clientesFiltrados.map((c) => (
             <div key={c.id} style={estilos.tarjetaCliente}>
               <div style={estilos.clienteHeader}>
                 <div>
@@ -1010,7 +1039,7 @@ function ModalBase({ titulo, onCerrar, children, ancho }) {
 
 function ModalProducto({ producto, onGuardar, onCerrar }) {
   const [form, setForm] = useState(
-    producto || { nombre: "", categoria: CATEGORIAS[0], marca: "", modelo: "", precio: "", stock: "", minimo: "", foto: null }
+    producto || { nombre: "", categoria: CATEGORIAS[0], marca: "", modelo: "", precio: "", costo: "", stock: "", minimo: "", foto: null }
   );
   const fileRef = useRef(null);
 
@@ -1066,8 +1095,12 @@ function ModalProducto({ producto, onGuardar, onCerrar }) {
           <input value={form.modelo} onChange={(e) => actualizar("modelo", e.target.value)} style={estilos.input} placeholder="Ej: PC1864" />
         </Campo>
 
-        <Campo label="Precio (MXN)">
+        <Campo label="Precio de venta (MXN)">
           <input type="number" value={form.precio} onChange={(e) => actualizar("precio", e.target.value)} style={estilos.input} placeholder="0" />
+        </Campo>
+
+        <Campo label="Costo (lo que te cuesta a ti, MXN)">
+          <input type="number" value={form.costo} onChange={(e) => actualizar("costo", e.target.value)} style={estilos.input} placeholder="0" />
         </Campo>
 
         <Campo label="Stock actual">
@@ -1629,18 +1662,32 @@ const estilos = {
     background: "var(--bg)",
     color: "var(--texto)",
     minHeight: "100vh",
-    "--bg": "#15171A",
-    "--superficie": "#1C1F23",
-    "--superficie-alta": "#23262B",
-    "--borde": "#2D3036",
-    "--texto": "#EDEEF0",
-    "--texto-sec": "#9BA0A8",
-    "--muted": "#6B7077",
-    "--ambar": "#D97706",
-    "--verde": "#639922",
-    "--rojo": "#E24B4A",
-    paddingBottom: 40,
+    display: "flex",
+    "--bg": "#F4F5F6",
+    "--superficie": "#FFFFFF",
+    "--superficie-alta": "#F0F1F3",
+    "--borde": "#D9DCE1",
+    "--texto": "#14181C",
+    "--texto-sec": "#6B7280",
+    "--muted": "#9CA3AF",
+    "--ambar": "#C8902F",
+    "--verde": "#2E7D4F",
+    "--rojo": "#C0392B",
   },
+  barraLateral: {
+    width: 230,
+    flexShrink: 0,
+    background: "var(--superficie)",
+    borderRight: "1px solid var(--borde)",
+    display: "flex",
+    flexDirection: "column",
+    padding: "22px 14px",
+    position: "sticky",
+    top: 0,
+    height: "100vh",
+    overflowY: "auto",
+  },
+  areaContenido: { flex: 1, minWidth: 0 },
   encabezado: {
     display: "flex",
     justifyContent: "space-between",
@@ -1650,14 +1697,16 @@ const estilos = {
     flexWrap: "wrap",
     gap: 16,
   },
-  marca: { display: "flex", alignItems: "center", gap: 12 },
-  logoEncabezado: { height: 30, width: "auto", objectFit: "contain", display: "block" },
+  marca: { display: "flex", alignItems: "center", gap: 12, marginBottom: 26, paddingLeft: 6 },
+  marcaTextos: { minWidth: 0 },
+  logoEncabezado: { height: 28, width: "auto", objectFit: "contain", display: "block" },
   fondoLogo: {
-    background: "#FAFAF8",
+    background: "#14181C",
     borderRadius: 9,
     padding: "6px 10px",
     display: "flex",
     alignItems: "center",
+    flexShrink: 0,
   },
   iconoMarca: {
     width: 36,
@@ -1668,35 +1717,45 @@ const estilos = {
     alignItems: "center",
     justifyContent: "center",
   },
-  marcaTitulo: { fontSize: 15, fontWeight: 600, letterSpacing: 0.2 },
-  marcaSub: { fontSize: 12, color: "var(--texto-sec)", marginTop: 2 },
-  tabs: { display: "flex", gap: 4, background: "var(--superficie)", padding: 4, borderRadius: 10 },
-  tabBtn: {
+  marcaTitulo: {
+    fontSize: 13,
+    fontWeight: 700,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  marcaSub: { fontSize: 11.5, color: "var(--texto-sec)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  tabsLateral: { display: "flex", flexDirection: "column", gap: 2, flex: 1 },
+  tabBtnLateral: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
-    padding: "8px 14px",
+    gap: 11,
+    padding: "10px 12px",
     borderRadius: 8,
     border: "none",
     background: "transparent",
     color: "var(--texto-sec)",
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: 500,
     cursor: "pointer",
+    width: "100%",
   },
-  tabBtnActivo: { background: "var(--superficie-alta)", color: "var(--texto)" },
-  badgeAlerta: { background: "var(--ambar)", color: "#1A1300", fontSize: 11, fontWeight: 700, borderRadius: 10, padding: "1px 6px", marginLeft: 2 },
-  btnSalir: {
+  tabBtnLateralActivo: { background: "var(--bg)", color: "var(--texto)", fontWeight: 600 },
+  badgeAlerta: { background: "var(--ambar)", color: "#FFFFFF", fontSize: 11, fontWeight: 700, borderRadius: 10, padding: "1px 6px", marginLeft: 2 },
+  btnSalirLateral: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
-    width: 36,
-    height: 36,
-    borderRadius: 9,
+    gap: 10,
+    padding: "10px 12px",
+    borderRadius: 8,
     border: "1px solid var(--borde)",
     background: "var(--superficie)",
     color: "var(--texto-sec)",
+    fontSize: 13,
     cursor: "pointer",
+    marginTop: 12,
   },
   bannerError: {
     display: "flex",
@@ -1710,8 +1769,8 @@ const estilos = {
   contenido: { padding: "28px 32px", maxWidth: 1200, margin: "0 auto" },
   statsRow: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 },
   statCard: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 12, padding: "16px 18px" },
-  statLabel: { fontSize: 12, color: "var(--texto-sec)", marginBottom: 6 },
-  statValor: { fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
+  statLabel: { fontSize: 11, color: "var(--texto-sec)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 },
+  statValor: { fontSize: 25, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" },
   toolbar: { display: "flex", gap: 10, alignItems: "center", marginBottom: 20, flexWrap: "wrap" },
   buscador: { display: "flex", alignItems: "center", gap: 8, background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 9, padding: "9px 12px", flex: 1, minWidth: 220 },
   inputBuscador: { background: "transparent", border: "none", outline: "none", color: "var(--texto)", fontSize: 13.5, width: "100%" },
@@ -1721,7 +1780,7 @@ const estilos = {
   btnSecundarioChico: { display: "flex", alignItems: "center", gap: 5, background: "var(--superficie-alta)", color: "var(--texto)", border: "1px solid var(--borde)", borderRadius: 7, padding: "6px 11px", fontSize: 12.5, fontWeight: 500, cursor: "pointer" },
   btnPeligro: { background: "var(--rojo)", color: "#fff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
   grilla: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14 },
-  tarjeta: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 12, padding: 14, position: "relative" },
+  tarjeta: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 12, padding: 14, position: "relative", boxShadow: "0 1px 3px rgba(20,24,28,0.05)" },
   tarjetaFoto: { width: "100%", height: 110, background: "var(--superficie-alta)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, position: "relative", overflow: "hidden" },
   imgProducto: { width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 },
   puntoEstado: { position: "absolute", top: 8, right: 8, width: 10, height: 10, borderRadius: "50%", border: "2px solid var(--superficie)" },
@@ -1755,10 +1814,10 @@ const estilos = {
   equiposLista: { display: "flex", flexDirection: "column", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--borde)" },
   equipoItem: { display: "flex", alignItems: "center", gap: 6, fontSize: 13 },
   equipoCantidad: { fontFamily: "'JetBrains Mono', monospace", color: "var(--texto-sec)", marginLeft: "auto" },
-  barraAlertas: { position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "var(--superficie-alta)", border: "1px solid var(--ambar)", borderRadius: 10, padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, maxWidth: 600, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" },
+  barraAlertas: { position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "var(--superficie)", border: "1px solid var(--ambar)", borderRadius: 10, padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, maxWidth: 600, boxShadow: "0 8px 24px rgba(20,24,28,0.12)" },
   alertaTexto: { fontSize: 12.5, color: "var(--texto)" },
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 },
-  modal: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 14, width: "100%", maxHeight: "85vh", overflow: "auto" },
+  modal: { background: "var(--superficie)", border: "1px solid var(--borde)", borderRadius: 14, width: "100%", maxHeight: "85vh", overflow: "auto", boxShadow: "0 12px 32px rgba(20,24,28,0.18)" },
   modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--borde)" },
   modalTitulo: { fontSize: 15, fontWeight: 600 },
   modalCuerpo: { padding: 20 },
