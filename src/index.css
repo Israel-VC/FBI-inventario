@@ -10,8 +10,8 @@ html, body, #root {
 
 body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
-  background: #15171a;
-  color: #edeef0;
+  background: #f4f5f6;
+  color: #14181c;
 }
 
 input, select, button, textarea {
@@ -19,5 +19,5 @@ input, select, button, textarea {
 }
 
 ::placeholder {
-  color: #6b7077;
+  color: #9ca3af;
 }
